@@ -48,6 +48,7 @@ class ServiceResource extends Resource
                         ->relationship('user', 'name')
                         ->searchable()
                         ->preload()
+                        ->default(auth()->id())
                         ->required()
                         ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')

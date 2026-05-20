@@ -43,18 +43,19 @@ class StockMovementResource extends Resource
     {
         return $form
             ->schema([
-                auth()->user()->role === 'admin'
+                auth()->user()->role === 'enterprise'
                     ? Forms\Components\Select::make('user_id')
                         ->relationship('user', 'name')
                         ->searchable()
                         ->preload()
+                        ->default(auth()->id())
                         ->required()
                         ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')
                         ->default(auth()->id()),
                 Forms\Components\Select::make('product_id')
                     ->relationship('product', 'name', function (Builder $query) {
-                        if (auth()->user()->role !== 'admin') {
+                        if (auth()->user()->role !== 'enterprise') {
                             $query->where('user_id', auth()->id());
                         }
                     })

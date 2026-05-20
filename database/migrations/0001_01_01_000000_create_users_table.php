@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->enum('role', ['admin'])->default('admin')->index();
+            $table->enum('role', ['admin', 'enterprise'])->default('admin')->index();
             $table->string('phone')->nullable();
             $table->string('cnpj')->nullable();
             $table->string('address')->nullable();
@@ -38,6 +38,18 @@ return new class extends Migration
                 'email_verified_at' => now(),
                 'password' => Hash::make('12345678'),
                 'role' => 'admin',
+            ]
+        );
+
+        User::firstOrCreate(
+            [
+                'email' => 'enterprise@enterprise',
+            ],
+            [
+                'name' => 'Empresa Principal',
+                'email_verified_at' => now(),
+                'password' => Hash::make('12345678'),
+                'role' => 'enterprise',
             ]
         );
 
