@@ -62,68 +62,98 @@ class ServiceResource extends Resource
                     ->searchable()
                     ->preload()
                     ->required()
+                    ->native(false)
                     ->label('Cliente'),
                 Forms\Components\TextInput::make('code')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                    )
                     ->label('Código'),
                 Forms\Components\TextInput::make('name')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
                     ->label('Nome'),
                 Forms\Components\Textarea::make('description')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Descrição'),
                 Forms\Components\TextInput::make('municipal_service_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('Código municipal'),
                 Forms\Components\TextInput::make('lc116_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('Código LC 116'),
                 Forms\Components\TextInput::make('cnae_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('CNAE'),
                 Forms\Components\TextInput::make('nbs_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('NBS'),
                 Forms\Components\TextInput::make('unit')
                     ->default('UN')
                     ->required()
+                    ->string()
+                    ->minLength(1)
                     ->maxLength(20)
                     ->label('Unidade'),
                 Forms\Components\TextInput::make('unit_price')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Valor unitário'),
                 Forms\Components\TextInput::make('iss_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota ISS'),
                 Forms\Components\TextInput::make('pis_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota PIS'),
                 Forms\Components\TextInput::make('cofins_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota COFINS'),
                 Forms\Components\TextInput::make('inss_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota INSS'),
                 Forms\Components\TextInput::make('ir_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota IR'),
                 Forms\Components\TextInput::make('csll_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota CSLL'),
                 Forms\Components\Toggle::make('is_active')
                     ->default(true)
                     ->label('Ativo'),
                 Forms\Components\Textarea::make('notes')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Observações'),
             ]);
     }

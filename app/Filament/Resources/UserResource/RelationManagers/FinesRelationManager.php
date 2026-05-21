@@ -20,6 +20,8 @@ class FinesRelationManager extends RelationManager
             ->schema([
                 Forms\Components\TextInput::make('ait')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255),
             ]);
     }

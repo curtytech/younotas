@@ -55,72 +55,101 @@ class ProductResource extends Resource
                         ->default(auth()->id()),
                 Forms\Components\TextInput::make('code')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                    )
                     ->label('Código'),
                 Forms\Components\TextInput::make('sku')
+                    ->string()
                     ->maxLength(255)
                     ->label('SKU'),
                 Forms\Components\TextInput::make('barcode')
+                    ->string()
                     ->maxLength(255)
                     ->label('Código de barras'),
                 Forms\Components\TextInput::make('name')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
                     ->label('Nome'),
                 Forms\Components\Textarea::make('description')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Descrição'),
                 Forms\Components\TextInput::make('ncm_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('NCM'),
                 Forms\Components\TextInput::make('cest_code')
+                    ->string()
                     ->maxLength(255)
                     ->label('CEST'),
                 Forms\Components\TextInput::make('gtin')
+                    ->string()
                     ->maxLength(255)
                     ->label('GTIN'),
                 Forms\Components\TextInput::make('unit')
                     ->default('UN')
                     ->required()
+                    ->string()
+                    ->minLength(1)
                     ->maxLength(20)
                     ->label('Unidade'),
                 Forms\Components\TextInput::make('cost_price')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Preço de custo'),
                 Forms\Components\TextInput::make('sale_price')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Preço de venda'),
                 Forms\Components\TextInput::make('stock_quantity')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Saldo em estoque'),
                 Forms\Components\TextInput::make('minimum_stock')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Estoque mínimo'),
                 Forms\Components\TextInput::make('icms_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota ICMS'),
                 Forms\Components\TextInput::make('ipi_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota IPI'),
                 Forms\Components\TextInput::make('pis_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota PIS'),
                 Forms\Components\TextInput::make('cofins_aliquot')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->label('Alíquota COFINS'),
                 Forms\Components\Toggle::make('is_active')
                     ->default(true)
                     ->label('Ativo'),
                 Forms\Components\Textarea::make('notes')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Observações'),
             ]);
     }

@@ -62,14 +62,22 @@ class SaleResource extends Resource
                     })
                     ->searchable()
                     ->preload()
+                    ->native(false)
                     ->label('Cliente'),
                 Forms\Components\TextInput::make('number')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                    )
                     ->label('Número da venda'),
                 Forms\Components\DatePicker::make('sale_date')
                     ->required()
                     ->default(now())
+                    ->maxDate(now())
                     ->label('Data da venda'),
                 Forms\Components\Select::make('status')
                     ->options([
@@ -80,6 +88,7 @@ class SaleResource extends Resource
                     ])
                     ->default('draft')
                     ->required()
+                    ->native(false)
                     ->label('Status'),
                 Forms\Components\Select::make('payment_status')
                     ->options([
@@ -91,6 +100,7 @@ class SaleResource extends Resource
                     ])
                     ->default('pending')
                     ->required()
+                    ->native(false)
                     ->label('Status do pagamento'),
                 Forms\Components\Toggle::make('issue_invoice')
                     ->default(false)
@@ -98,21 +108,26 @@ class SaleResource extends Resource
                 Forms\Components\TextInput::make('subtotal_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Subtotal'),
                 Forms\Components\TextInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Desconto'),
                 Forms\Components\TextInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Impostos'),
                 Forms\Components\TextInput::make('total_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Total'),
                 Forms\Components\Textarea::make('notes')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Observações'),
             ]);
     }

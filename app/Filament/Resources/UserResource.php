@@ -12,6 +12,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class UserResource extends Resource
 {
@@ -33,16 +34,20 @@ class UserResource extends Resource
             ->schema([
                 Forms\Components\TextInput::make('name')
                     ->required()
+                    ->string()
+                    ->minLength(3)
                     ->maxLength(255)
                     ->label('Nome'),
                 Forms\Components\TextInput::make('email')
                     ->email()
                     ->required()
+                    ->string()
                     ->maxLength(255)
                     ->unique(ignoreRecord: true)
                     ->label('E-mail'),
                 Forms\Components\TextInput::make('password')
                     ->password()
+                    ->rule(Password::min(8))
                     ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                     ->dehydrated(fn ($state) => filled($state))
                     ->required(fn (string $context): bool => $context === 'create')
@@ -54,6 +59,7 @@ class UserResource extends Resource
                     ])
                     ->required()
                     ->default('enterprise')
+                    ->native(false)
                     ->label('Função'),
             ]);
     }

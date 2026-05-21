@@ -19,7 +19,8 @@ class AppealsRelationManager extends RelationManager
         return $form
             ->schema([
                 Forms\Components\DatePicker::make('date')
-                    ->required(),
+                    ->required()
+                    ->maxDate(now()),
             ]);
     }
 

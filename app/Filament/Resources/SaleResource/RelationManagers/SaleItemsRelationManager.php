@@ -24,6 +24,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->searchable()
                     ->preload()
                     ->required()
+                    ->native(false)
                     ->label('Produto')
                     ->live()
                     ->afterStateUpdated(function ($state, callable $set): void {
@@ -40,14 +41,20 @@ class SaleItemsRelationManager extends RelationManager
                     }),
                 Forms\Components\TextInput::make('product_name')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
                     ->label('Nome do produto'),
                 Forms\Components\TextInput::make('product_code')
                     ->required()
+                    ->string()
+                    ->minLength(1)
                     ->maxLength(255)
                     ->label('Código do produto'),
                 Forms\Components\TextInput::make('unit')
                     ->required()
+                    ->string()
+                    ->minLength(1)
                     ->maxLength(20)
                     ->default('UN')
                     ->label('Unidade'),
@@ -55,6 +62,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->numeric()
                     ->required()
                     ->default(1)
+                    ->minValue(0.001)
                     ->live(onBlur: true)
                     ->label('Quantidade')
                     ->afterStateUpdated(function ($state, callable $get, callable $set): void {
@@ -69,6 +77,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->numeric()
                     ->required()
                     ->default(0)
+                    ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Valor unitário')
                     ->afterStateUpdated(function ($state, callable $get, callable $set): void {
@@ -82,6 +91,7 @@ class SaleItemsRelationManager extends RelationManager
                 Forms\Components\TextInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Desconto')
                     ->afterStateUpdated(function ($state, callable $get, callable $set): void {
@@ -95,6 +105,7 @@ class SaleItemsRelationManager extends RelationManager
                 Forms\Components\TextInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Impostos')
                     ->afterStateUpdated(function ($state, callable $get, callable $set): void {
@@ -109,6 +120,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->numeric()
                     ->required()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Total'),
             ]);
     }

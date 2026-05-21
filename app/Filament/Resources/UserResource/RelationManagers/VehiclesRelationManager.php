@@ -20,6 +20,8 @@ class VehiclesRelationManager extends RelationManager
             ->schema([
                 Forms\Components\TextInput::make('name')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255),
             ]);
     }

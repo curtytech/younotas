@@ -43,7 +43,7 @@ class StockMovementResource extends Resource
     {
         return $form
             ->schema([
-                auth()->user()->role === 'enterprise'
+                auth()->user()->role === 'admin'
                     ? Forms\Components\Select::make('user_id')
                         ->relationship('user', 'name')
                         ->searchable()
@@ -55,13 +55,14 @@ class StockMovementResource extends Resource
                         ->default(auth()->id()),
                 Forms\Components\Select::make('product_id')
                     ->relationship('product', 'name', function (Builder $query) {
-                        if (auth()->user()->role !== 'enterprise') {
+                        if (auth()->user()->role !== 'admin') {
                             $query->where('user_id', auth()->id());
                         }
                     })
                     ->searchable()
                     ->preload()
                     ->required()
+                    ->native(false)
                     ->label('Produto'),
                 Forms\Components\Select::make('movement_type')
                     ->options([
@@ -70,6 +71,7 @@ class StockMovementResource extends Resource
                         'adjustment' => 'Ajuste',
                     ])
                     ->required()
+                    ->native(false)
                     ->label('Tipo de movimentação'),
                 Forms\Components\Select::make('source_type')
                     ->options([
@@ -79,32 +81,40 @@ class StockMovementResource extends Resource
                         'inventory_adjustment' => 'Ajuste de inventário',
                     ])
                     ->required()
+                    ->native(false)
                     ->label('Origem'),
                 Forms\Components\TextInput::make('reference')
+                    ->string()
                     ->maxLength(255)
                     ->label('Referência'),
                 Forms\Components\TextInput::make('quantity')
                     ->numeric()
                     ->required()
+                    ->minValue(0.001)
                     ->label('Quantidade'),
                 Forms\Components\TextInput::make('previous_stock')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Saldo anterior'),
                 Forms\Components\TextInput::make('current_stock')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Saldo atual'),
                 Forms\Components\TextInput::make('unit_cost')
                     ->numeric()
                     ->default(0)
+                    ->minValue(0)
                     ->label('Custo unitário'),
                 Forms\Components\DateTimePicker::make('moved_at')
                     ->required()
                     ->default(now())
+                    ->maxDate(now())
                     ->label('Data da movimentação'),
                 Forms\Components\Textarea::make('notes')
                     ->rows(3)
+                    ->maxLength(65535)
                     ->label('Observações'),
             ]);
     }

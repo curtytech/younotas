@@ -48,21 +48,31 @@ class ClientResource extends Resource
                         ->relationship('user', 'name')
                         ->searchable()
                         ->preload()
+                        ->default(auth()->id())
                         ->required()
                         ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')
                         ->default(auth()->id()),
                 Forms\Components\TextInput::make('name')
                     ->required()
+                    ->string()
+                    ->minLength(3)
                     ->maxLength(255)
                     ->label('Nome do cliente'),
                 Forms\Components\TextInput::make('email')
                     ->email()
                     ->required()
+                    ->string()
                     ->maxLength(255)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                    )
                     ->label('E-mail'),
                 Forms\Components\TextInput::make('phone')
                     ->required()
+                    ->string()
+                    ->minLength(8)
                     ->maxLength(30)
                     ->label('Telefone'),
                 Forms\Components\Select::make('document_type')
@@ -72,37 +82,58 @@ class ClientResource extends Resource
                         'nif' => 'NIF',
                     ])
                     ->required()
+                    ->native(false)
                     ->label('Tipo de documento'),
                 Forms\Components\TextInput::make('document')
                     ->required()
+                    ->string()
+                    ->minLength(3)
                     ->maxLength(255)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule
+                            ->where('user_id', $get('user_id') ?: auth()->id())
+                            ->where('document_type', $get('document_type')),
+                    )
                     ->label('Documento'),
                 Forms\Components\TextInput::make('address')
                     ->required()
+                    ->string()
+                    ->minLength(3)
                     ->maxLength(255)
                     ->label('Endereço'),
                 Forms\Components\TextInput::make('address_number')
+                    ->string()
                     ->maxLength(50)
                     ->label('Número'),
                 Forms\Components\TextInput::make('address_complement')
+                    ->string()
                     ->maxLength(255)
                     ->label('Complemento'),
                 Forms\Components\TextInput::make('neighborhood')
+                    ->string()
                     ->maxLength(255)
                     ->label('Bairro'),
                 Forms\Components\TextInput::make('city')
                     ->required()
+                    ->string()
+                    ->minLength(2)
                     ->maxLength(255)
                     ->label('Cidade'),
                 Forms\Components\TextInput::make('state')
+                    ->string()
+                    ->length(2)
                     ->maxLength(2)
                     ->label('UF'),
                 Forms\Components\TextInput::make('zip_code')
+                    ->string()
                     ->maxLength(20)
                     ->label('CEP'),
                 Forms\Components\TextInput::make('country')
                     ->default('BR')
                     ->required()
+                    ->string()
+                    ->length(2)
                     ->maxLength(2)
                     ->label('País'),
                 Forms\Components\Toggle::make('is_active')
