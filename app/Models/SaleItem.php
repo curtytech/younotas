@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SaleItemStockService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +10,25 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SaleItem extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saving(function (SaleItem $saleItem): void {
+            app(SaleItemStockService::class)->validateBeforeSave($saleItem);
+        });
+
+        static::created(function (SaleItem $saleItem): void {
+            app(SaleItemStockService::class)->handleCreated($saleItem);
+        });
+
+        static::updated(function (SaleItem $saleItem): void {
+            app(SaleItemStockService::class)->handleUpdated($saleItem);
+        });
+
+        static::deleted(function (SaleItem $saleItem): void {
+            app(SaleItemStockService::class)->handleDeleted($saleItem);
+        });
+    }
 
     protected $fillable = [
         'sale_id',

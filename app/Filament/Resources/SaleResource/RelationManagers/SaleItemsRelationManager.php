@@ -20,7 +20,14 @@ class SaleItemsRelationManager extends RelationManager
         return $form
             ->schema([
                 Forms\Components\Select::make('product_id')
-                    ->options(fn (): array => Product::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->options(fn (): array => Product::query()
+                        ->when(
+                            auth()->user()->role !== 'admin',
+                            fn ($query) => $query->where('user_id', auth()->id()),
+                        )
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all())
                     ->searchable()
                     ->preload()
                     ->required()

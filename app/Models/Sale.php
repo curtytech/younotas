@@ -11,6 +11,13 @@ class Sale extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Sale $sale): void {
+            $sale->saleItems()->get()->each->delete();
+        });
+    }
+
     protected $fillable = [
         'user_id',
         'client_id',

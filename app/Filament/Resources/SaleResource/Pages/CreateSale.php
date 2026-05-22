@@ -12,10 +12,19 @@ class CreateSale extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $data['number'] = 'TMP-' . uniqid();
+
         if (auth()->user()->role !== 'admin') {
             $data['user_id'] = auth()->id();
         }
 
         return $data;
+    }
+
+    protected function afterCreate(): void
+    {
+        $this->record->update([
+            'number' => (string) $this->record->id,
+        ]);
     }
 }
