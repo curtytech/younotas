@@ -21,6 +21,7 @@ return new class extends Migration
             $table->string('phone');
             $table->enum('document_type', ['cpf', 'cnpj', 'nif']);
             $table->string('document');
+            $table->string('inscricao_estatual')->nullable();
             $table->string('address');
             $table->string('address_number')->nullable();
             $table->string('address_complement')->nullable();

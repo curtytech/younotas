@@ -6,8 +6,10 @@ use App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource\RelationManagers\SaleItemsRelationManager;
 use App\Models\Product;
 use App\Models\Sale;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -180,6 +182,24 @@ class SaleResource extends Resource
                             ->default(1)
                             ->minValue(0.001)
                             ->live(onBlur: true)
+                            ->rule(fn (Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($get): void {
+                                $requestedQuantity = (float) ($value ?: 0);
+                                $availableStock = static::getAvailableStock((int) ($get('product_id') ?: 0));
+
+                                if ($availableStock === null || $requestedQuantity <= 0 || $requestedQuantity <= $availableStock) {
+                                    return;
+                                }
+
+                                $fail(sprintf(
+                                    'Estoque insuficiente. Disponivel: %s, solicitado: %s.',
+                                    number_format($availableStock, 3, ',', '.'),
+                                    number_format($requestedQuantity, 3, ',', '.'),
+                                ));
+                            })
+                            ->helperText(fn (Get $get): ?string => static::getStockWarningMessage(
+                                productId: (int) ($get('product_id') ?: 0),
+                                requestedQuantity: (float) ($get('quantity') ?: 0),
+                            ))
                             ->columnSpan(2)
                             ->label('Quantidade')
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
@@ -412,6 +432,34 @@ class SaleResource extends Resource
 
         $set('subtotal_amount', round($subtotal, 2));
         $set('total_amount', max(round($subtotal - $saleDiscount + $saleTax, 2), 0));
+    }
+
+    protected static function getAvailableStock(int $productId): ?float
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        $product = Product::query()->find($productId);
+
+        return $product ? (float) $product->stock_quantity : null;
+    }
+
+    protected static function getStockWarningMessage(int $productId, float $requestedQuantity): ?string
+    {
+        $availableStock = static::getAvailableStock($productId);
+
+        if ($availableStock === null) {
+            return null;
+        }
+
+        $message = 'Estoque disponivel: ' . number_format($availableStock, 3, ',', '.');
+
+        if ($requestedQuantity > $availableStock) {
+            $message .= '. A quantidade informada e maior que o estoque e a venda nao sera salva.';
+        }
+
+        return $message;
     }
 
     public static function getPages(): array

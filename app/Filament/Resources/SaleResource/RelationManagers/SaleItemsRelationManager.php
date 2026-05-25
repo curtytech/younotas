@@ -3,11 +3,14 @@
 namespace App\Filament\Resources\SaleResource\RelationManagers;
 
 use App\Models\Product;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class SaleItemsRelationManager extends RelationManager
 {
@@ -71,6 +74,28 @@ class SaleItemsRelationManager extends RelationManager
                     ->default(1)
                     ->minValue(0.001)
                     ->live(onBlur: true)
+                    ->rule(fn (Get $get, ?Model $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record): void {
+                        $requestedQuantity = (float) ($value ?: 0);
+                        $availableStock = static::getAvailableStock(
+                            productId: (int) ($get('product_id') ?: 0),
+                            record: $record,
+                        );
+
+                        if ($availableStock === null || $requestedQuantity <= 0 || $requestedQuantity <= $availableStock) {
+                            return;
+                        }
+
+                        $fail(sprintf(
+                            'Estoque insuficiente. Disponivel: %s, solicitado: %s.',
+                            number_format($availableStock, 3, ',', '.'),
+                            number_format($requestedQuantity, 3, ',', '.'),
+                        ));
+                    })
+                    ->helperText(fn (Get $get, ?Model $record): ?string => static::getStockWarningMessage(
+                        productId: (int) ($get('product_id') ?: 0),
+                        requestedQuantity: (float) ($get('quantity') ?: 0),
+                        record: $record,
+                    ))
                     ->label('Quantidade')
                     ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                         $quantity = (float) ($state ?: 0);
@@ -162,5 +187,43 @@ class SaleItemsRelationManager extends RelationManager
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    protected static function getAvailableStock(int $productId, ?Model $record = null): ?float
+    {
+        if ($productId <= 0) {
+            return null;
+        }
+
+        $product = Product::query()->find($productId);
+
+        if (! $product) {
+            return null;
+        }
+
+        $availableStock = (float) $product->stock_quantity;
+
+        if ($record && (int) $record->product_id === $productId) {
+            $availableStock += (float) $record->quantity;
+        }
+
+        return $availableStock;
+    }
+
+    protected static function getStockWarningMessage(int $productId, float $requestedQuantity, ?Model $record = null): ?string
+    {
+        $availableStock = static::getAvailableStock($productId, $record);
+
+        if ($availableStock === null) {
+            return null;
+        }
+
+        $message = 'Estoque disponivel: ' . number_format($availableStock, 3, ',', '.');
+
+        if ($requestedQuantity > $availableStock) {
+            $message .= '. A quantidade informada e maior que o estoque e o item nao sera salvo.';
+        }
+
+        return $message;
     }
 }

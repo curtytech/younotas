@@ -22,6 +22,8 @@ return new class extends Migration
             $table->string('name');
             $table->text('description')->nullable();
             $table->string('ncm_code')->nullable();
+            $table->string('cst_code')->nullable();
+            $table->string('cfop_code')->nullable();
             $table->string('cest_code')->nullable();
             $table->string('gtin')->nullable();
             $table->string('unit', 20)->default('UN');

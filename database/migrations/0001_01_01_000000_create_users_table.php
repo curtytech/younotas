@@ -21,7 +21,11 @@ return new class extends Migration
             $table->enum('role', ['admin', 'enterprise'])->default('admin')->index();
             $table->string('phone')->nullable();
             $table->string('cnpj')->nullable();
+            $table->string('razao_social')->nullable();
+            $table->string('inscricao_estatual')->nullable();
             $table->string('address')->nullable();
+            $table->string('address_number')->nullable();
+            $table->string('address_complement')->nullable();
             $table->string('city')->nullable();
             $table->string('state')->nullable();
             $table->string('zip_code')->nullable();
