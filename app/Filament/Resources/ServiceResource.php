@@ -45,14 +45,14 @@ class ServiceResource extends Resource
             ->schema([
                 auth()->user()->role === 'admin'
                     ? Forms\Components\Select::make('user_id')
-                        ->relationship('user', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->default(auth()->id())
-                        ->required()
-                        ->label('Usuário')
+                    ->relationship('user', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->default(auth()->id())
+                    ->required()
+                    ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')
-                        ->default(auth()->id()),
+                    ->default(auth()->id()),
                 Forms\Components\Select::make('client_id')
                     ->relationship('client', 'name', function (Builder $query) {
                         if (auth()->user()->role !== 'admin') {
@@ -65,13 +65,12 @@ class ServiceResource extends Resource
                     ->native(false)
                     ->label('Cliente'),
                 Forms\Components\TextInput::make('code')
-                    ->required()
                     ->string()
                     ->minLength(2)
                     ->maxLength(255)
                     ->unique(
                         ignoreRecord: true,
-                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                        modifyRuleUsing: fn($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
                     )
                     ->label('Código'),
                 Forms\Components\TextInput::make('name')
@@ -80,10 +79,6 @@ class ServiceResource extends Resource
                     ->minLength(2)
                     ->maxLength(255)
                     ->label('Nome'),
-                Forms\Components\Textarea::make('description')
-                    ->rows(3)
-                    ->maxLength(65535)
-                    ->label('Descrição'),
                 Forms\Components\TextInput::make('municipal_service_code')
                     ->string()
                     ->maxLength(255)
@@ -148,13 +143,17 @@ class ServiceResource extends Resource
                     ->minValue(0)
                     ->maxValue(100)
                     ->label('Alíquota CSLL'),
-                Forms\Components\Toggle::make('is_active')
-                    ->default(true)
-                    ->label('Ativo'),
+                Forms\Components\Textarea::make('description')
+                    ->rows(3)
+                    ->maxLength(65535)
+                    ->label('Descrição'),
                 Forms\Components\Textarea::make('notes')
                     ->rows(3)
                     ->maxLength(65535)
                     ->label('Observações'),
+                Forms\Components\Toggle::make('is_active')
+                    ->default(true)
+                    ->label('Ativo'),
             ]);
     }
 
@@ -190,7 +189,7 @@ class ServiceResource extends Resource
                 Tables\Filters\SelectFilter::make('user_id')
                     ->relationship('user', 'name')
                     ->label('Usuário')
-                    ->visible(fn (): bool => auth()->user()->role === 'admin'),
+                    ->visible(fn(): bool => auth()->user()->role === 'admin'),
                 Tables\Filters\SelectFilter::make('client_id')
                     ->relationship('client', 'name')
                     ->label('Cliente'),

@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('client_id')
                 ->constrained()
                 ->cascadeOnDelete();
-            $table->string('code');
+            $table->string('code')->nullable();
             $table->string('name');
             $table->text('description')->nullable();
             $table->string('municipal_service_code')->nullable();

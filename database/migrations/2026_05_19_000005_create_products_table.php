@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('user_id')
                 ->constrained()
                 ->cascadeOnDelete();
-            $table->string('code');
+            $table->string('code')->nullable();
             $table->string('sku')->nullable();
             $table->string('barcode')->nullable();
             $table->string('name');

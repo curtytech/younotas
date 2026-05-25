@@ -53,21 +53,21 @@ class ProductResource extends Resource
                         ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')
                         ->default(auth()->id()),
-                Forms\Components\TextInput::make('code')
-                    ->required()
-                    ->string()
-                    ->minLength(2)
-                    ->maxLength(50)
-                    ->rule('regex:/^[A-Za-z0-9._\\/-]+$/')
-                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null)
-                    ->unique(
-                        ignoreRecord: true,
-                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
-                    )
-                    ->validationMessages([
-                        'regex' => 'O codigo deve conter apenas letras, numeros, ponto, barra, underscore ou hifen.',
-                    ])
-                    ->label('Código'),
+                // Forms\Components\TextInput::make('code')
+                //     ->required()
+                //     ->string()
+                //     ->minLength(2)
+                //     ->maxLength(50)
+                //     ->rule('regex:/^[A-Za-z0-9._\\/-]+$/')
+                //     ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null)
+                //     ->unique(
+                //         ignoreRecord: true,
+                //         modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                //     )
+                //     ->validationMessages([
+                //         'regex' => 'O codigo deve conter apenas letras, numeros, ponto, barra, underscore ou hifen.',
+                //     ])
+                //     ->label('Código'),
                 Forms\Components\TextInput::make('sku')
                     ->string()
                     ->maxLength(100)
