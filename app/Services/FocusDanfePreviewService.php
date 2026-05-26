@@ -1,0 +1,266 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Client;
+use App\Models\Product;
+use App\Models\Sale;
+use App\Models\SaleItem;
+use App\Models\User;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use RuntimeException;
+
+class FocusDanfePreviewService
+{
+    public function generate(Sale $sale): Response
+    {
+        $payload = $this->buildPayload($sale);
+
+        $response = Http::baseUrl(rtrim((string) config('services.focus_nfe.base_url'), '/'))
+            ->withBasicAuth(
+                (string) config('services.focus_nfe.api_key'),
+                (string) config('services.focus_nfe.api_password', ''),
+            )
+            ->accept('application/pdf')
+            ->asJson()
+            ->post('/v2/nfe/danfe', $payload);
+
+        try {
+            $response->throw();
+        } catch (RequestException $exception) {
+            throw new RuntimeException(
+                $response->json('mensagem')
+                    ?? $response->json('message')
+                    ?? $response->json('erros.0.mensagem')
+                    ?? $exception->getMessage(),
+                previous: $exception,
+            );
+        }
+
+        return $response;
+    }
+
+    public function buildPayload(Sale $sale): array
+    {
+        $sale->loadMissing(['user', 'client', 'saleItems.product']);
+
+        $this->guardRequiredConfiguration();
+        $this->guardRequiredModelData($sale);
+
+        $emitente = $this->resolveEmitenteData($sale->user);
+        $destinatario = $this->resolveDestinatarioData($sale->client);
+        $this->guardRequiredEmitenteData($emitente);
+        $items = $sale->saleItems
+            ->values()
+            ->map(fn (SaleItem $item, int $index): array => $this->buildItemPayload($item, $index + 1))
+            ->all();
+
+        return array_filter([
+            'natureza_operacao' => (string) config('services.focus_nfe.nfe.natureza_operacao', 'VENDA DE MERCADORIA'),
+            'data_emissao' => $sale->sale_date?->copy()->setTime(now()->hour, now()->minute, now()->second)->toIso8601String()
+                ?? now()->toIso8601String(),
+            'data_entrada_saida' => $sale->sale_date?->copy()->endOfDay()->toIso8601String()
+                ?? now()->toIso8601String(),
+            'tipo_documento' => (int) config('services.focus_nfe.nfe.tipo_documento', 1),
+            'local_destino' => $this->resolveLocalDestino($emitente['uf_emitente'], $destinatario['uf_destinatario']),
+            'finalidade_emissao' => (int) config('services.focus_nfe.nfe.finalidade_emissao', 1),
+            'consumidor_final' => (int) config('services.focus_nfe.nfe.consumidor_final', 1),
+            'presenca_comprador' => (int) config('services.focus_nfe.nfe.presenca_comprador', 1),
+            'modalidade_frete' => (int) config('services.focus_nfe.nfe.modalidade_frete', 9),
+            ...$emitente,
+            ...$destinatario,
+            'valor_frete' => (float) config('services.focus_nfe.nfe.valor_frete', 0),
+            'valor_seguro' => (float) config('services.focus_nfe.nfe.valor_seguro', 0),
+            'valor_desconto' => (float) ($sale->discount_amount ?? 0),
+            'valor_outras_despesas' => (float) config('services.focus_nfe.nfe.valor_outras_despesas', 0),
+            'valor_total' => (float) $sale->total_amount,
+            'valor_produtos' => (float) $sale->subtotal_amount,
+            'items' => $items,
+            'formas_pagamento' => [[
+                'forma_pagamento' => (string) config('services.focus_nfe.nfe.forma_pagamento', '01'),
+                'valor_pagamento' => number_format((float) $sale->total_amount, 2, '.', ''),
+            ]],
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    protected function buildItemPayload(SaleItem $saleItem, int $itemNumber): array
+    {
+        /** @var Product|null $product */
+        $product = $saleItem->product;
+
+        $codigoNcm = $this->onlyDigits((string) ($product?->ncm_code ?: config('services.focus_nfe.nfe.codigo_ncm_padrao')));
+
+        if (blank($codigoNcm)) {
+            throw new RuntimeException("O produto \"{$saleItem->product_name}\" precisa ter NCM para gerar a pré-visualização da DANFe.");
+        }
+
+        return array_filter([
+            'numero_item' => $itemNumber,
+            'codigo_produto' => $saleItem->product?->getKey()
+                ? (string) $saleItem->product->getKey()
+                : ($saleItem->product_code ?: (string) $saleItem->product_id),
+            'descricao' => $saleItem->product_name,
+            'cfop' => (string) ($product?->cfop ?? config('services.focus_nfe.nfe.cfop_padrao', '5102')),
+            'unidade_comercial' => $this->normalizeUnit((string) $saleItem->unit),
+            'quantidade_comercial' => $this->formatDecimal((float) $saleItem->quantity, 3),
+            'valor_unitario_comercial' => $this->formatDecimal((float) $saleItem->unit_price, 4),
+            'valor_unitario_tributavel' => $this->formatDecimal((float) $saleItem->unit_price, 4),
+            'unidade_tributavel' => $this->normalizeUnit((string) $saleItem->unit),
+            'codigo_ncm' => $codigoNcm,
+            'quantidade_tributavel' => $this->formatDecimal((float) $saleItem->quantity, 3),
+            'valor_bruto' => $this->formatDecimal((float) $saleItem->total_amount, 2),
+            'valor_desconto' => $this->formatDecimal((float) ($saleItem->discount_amount ?? 0), 2),
+            'valor_total_tributos' => $this->formatDecimal((float) ($saleItem->tax_amount ?? 0), 2),
+            'icms_situacao_tributaria' => (string) config('services.focus_nfe.nfe.icms_situacao_tributaria', '102'),
+            'icms_origem' => (string) config('services.focus_nfe.nfe.icms_origem', '0'),
+            'pis_situacao_tributaria' => (string) config('services.focus_nfe.nfe.pis_situacao_tributaria', '07'),
+            'cofins_situacao_tributaria' => (string) config('services.focus_nfe.nfe.cofins_situacao_tributaria', '07'),
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    protected function resolveEmitenteData(User $user): array
+    {
+        $cnpj = $this->onlyDigits((string) ($user->cnpj ?: config('services.focus_nfe.prestador.cnpj')));
+
+        return [
+            'cnpj_emitente' => $cnpj,
+            'nome_emitente' => $user->razao_social ?: $user->name ?: config('services.focus_nfe.nfe.emitente.nome'),
+            'nome_fantasia_emitente' => $user->name ?: config('services.focus_nfe.nfe.emitente.nome_fantasia'),
+            'logradouro_emitente' => $user->address ?: config('services.focus_nfe.nfe.emitente.logradouro'),
+            'numero_emitente' => $user->address_number ?: config('services.focus_nfe.nfe.emitente.numero'),
+            'bairro_emitente' => config('services.focus_nfe.nfe.emitente.bairro'),
+            'municipio_emitente' => $user->city ?: config('services.focus_nfe.nfe.emitente.municipio'),
+            'uf_emitente' => $user->state ?: config('services.focus_nfe.nfe.emitente.uf'),
+            'cep_emitente' => $this->onlyDigits((string) ($user->zip_code ?: config('services.focus_nfe.nfe.emitente.cep'))),
+            'inscricao_estadual_emitente' => $user->inscricao_estatual ?: config('services.focus_nfe.nfe.emitente.inscricao_estadual'),
+            'regime_tributario_emitente' => $this->nullableInt(config('services.focus_nfe.nfe.emitente.regime_tributario')),
+        ];
+    }
+
+    protected function resolveDestinatarioData(Client $client): array
+    {
+        $document = $this->onlyDigits((string) $client->document);
+        $documentKey = match ($client->document_type) {
+            'cnpj' => 'cnpj_destinatario',
+            'cpf' => 'cpf_destinatario',
+            default => throw new RuntimeException('A pré-visualização da DANFe aceita apenas clientes com CPF ou CNPJ.'),
+        };
+
+        return array_filter([
+            'nome_destinatario' => $client->name,
+            $documentKey => $document,
+            'indicador_inscricao_estadual_destinatario' => '9',
+            'inscricao_estadual_destinatario' => null,
+            'logradouro_destinatario' => $client->address,
+            'numero_destinatario' => $client->address_number ?: 'S/N',
+            'bairro_destinatario' => $client->neighborhood,
+            'municipio_destinatario' => $client->city,
+            'uf_destinatario' => $client->state,
+            'cep_destinatario' => $this->onlyDigits((string) $client->zip_code),
+            'pais_destinatario' => $client->country ?: 'Brasil',
+            'telefone_destinatario' => $this->onlyDigits((string) $client->phone),
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    protected function guardRequiredConfiguration(): void
+    {
+        $required = [
+            'services.focus_nfe.api_key' => 'FOCUS_NFE_API_KEY',
+        ];
+
+        foreach ($required as $configKey => $envName) {
+            if (blank(config($configKey))) {
+                throw new RuntimeException("Configure {$envName} antes de gerar a DANFe.");
+            }
+        }
+    }
+
+    protected function guardRequiredModelData(Sale $sale): void
+    {
+        if (! $sale->user) {
+            throw new RuntimeException('A venda precisa estar vinculada a um emitente.');
+        }
+
+        if (! $sale->client) {
+            throw new RuntimeException('A venda precisa estar vinculada a um cliente.');
+        }
+
+        if ($sale->saleItems->isEmpty()) {
+            throw new RuntimeException('Adicione ao menos um produto na venda para gerar a pré-visualização da DANFe.');
+        }
+
+        if (blank($sale->client->document_type) || blank($sale->client->document)) {
+            throw new RuntimeException('O cliente precisa ter CPF ou CNPJ preenchido para gerar a DANFe.');
+        }
+
+        if (! in_array($sale->client->document_type, ['cpf', 'cnpj'], true)) {
+            throw new RuntimeException('A pré-visualização da DANFe aceita apenas clientes com CPF ou CNPJ.');
+        }
+
+        if (blank($sale->client->address) || blank($sale->client->city) || blank($sale->client->state)) {
+            throw new RuntimeException('O cliente precisa ter endereco, cidade e UF preenchidos para gerar a DANFe.');
+        }
+
+        if (blank($sale->subtotal_amount) || (float) $sale->subtotal_amount <= 0) {
+            throw new RuntimeException('A venda precisa ter subtotal maior que zero para gerar a DANFe.');
+        }
+    }
+
+    protected function guardRequiredEmitenteData(array $emitente): void
+    {
+        $required = [
+            'cnpj_emitente' => 'FOCUS_NFE_PRESTADOR_CNPJ ou CNPJ da empresa',
+            'nome_emitente' => 'FOCUS_NFE_EMITENTE_NOME ou razao_social da empresa',
+            'logradouro_emitente' => 'FOCUS_NFE_EMITENTE_LOGRADOURO ou endereco da empresa',
+            'numero_emitente' => 'FOCUS_NFE_EMITENTE_NUMERO ou numero do endereco da empresa',
+            'bairro_emitente' => 'FOCUS_NFE_EMITENTE_BAIRRO',
+            'municipio_emitente' => 'FOCUS_NFE_EMITENTE_MUNICIPIO ou cidade da empresa',
+            'uf_emitente' => 'FOCUS_NFE_EMITENTE_UF ou UF da empresa',
+            'cep_emitente' => 'FOCUS_NFE_EMITENTE_CEP ou CEP da empresa',
+            'inscricao_estadual_emitente' => 'FOCUS_NFE_EMITENTE_INSCRICAO_ESTADUAL ou inscricao_estatual da empresa',
+        ];
+
+        foreach ($required as $field => $source) {
+            if (blank($emitente[$field] ?? null)) {
+                throw new RuntimeException("Preencha {$source} antes de gerar a DANFe.");
+            }
+        }
+    }
+
+    protected function resolveLocalDestino(?string $ufEmitente, ?string $ufDestinatario): int
+    {
+        if (blank($ufEmitente) || blank($ufDestinatario)) {
+            return (int) config('services.focus_nfe.nfe.local_destino', 1);
+        }
+
+        return strtoupper($ufEmitente) === strtoupper($ufDestinatario) ? 1 : 2;
+    }
+
+    protected function onlyDigits(string $value): string
+    {
+        return preg_replace('/\D/', '', $value) ?? '';
+    }
+
+    protected function formatDecimal(float $value, int $precision): string
+    {
+        return number_format($value, $precision, '.', '');
+    }
+
+    protected function normalizeUnit(string $value): string
+    {
+        $value = trim($value);
+
+        return strtoupper($value !== '' ? $value : 'UN');
+    }
+
+    protected function nullableInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+}

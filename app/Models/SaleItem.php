@@ -14,6 +14,10 @@ class SaleItem extends Model
     protected static function booted(): void
     {
         static::saving(function (SaleItem $saleItem): void {
+            if ($saleItem->product_id) {
+                $saleItem->product_code = (string) $saleItem->product_id;
+            }
+
             app(SaleItemStockService::class)->validateBeforeSave($saleItem);
         });
 

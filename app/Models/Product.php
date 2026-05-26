@@ -11,6 +11,23 @@ class Product extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::created(function (Product $product): void {
+            $expectedCode = (string) $product->id;
+
+            if ($product->code !== $expectedCode) {
+                $product->forceFill(['code' => $expectedCode])->saveQuietly();
+            }
+        });
+
+        static::saving(function (Product $product): void {
+            if ($product->exists) {
+                $product->code = (string) $product->id;
+            }
+        });
+    }
+
     protected $fillable = [
         'user_id',
         'code',

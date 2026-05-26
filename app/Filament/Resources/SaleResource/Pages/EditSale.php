@@ -22,6 +22,12 @@ class EditSale extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('previsualizar_danfe')
+                ->label('Pré-visualizar DANFe')
+                ->icon('heroicon-o-document')
+                ->color('gray')
+                ->url(fn (): string => route('sales.danfe-preview', $this->record))
+                ->openUrlInNewTab(),
             Actions\DeleteAction::make(),
         ];
     }

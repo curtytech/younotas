@@ -145,7 +145,7 @@ class SaleResource extends Resource
                                 }
 
                                 $set('product_name', $product->name);
-                                $set('product_code', $product->code);
+                                $set('product_code', (string) $product->id);
                                 $set('unit', $product->unit);
                                 $set('unit_price', $product->sale_price);
 
@@ -375,6 +375,12 @@ class SaleResource extends Resource
                     ->label('Pagamento'),
             ])
             ->actions([
+                Tables\Actions\Action::make('previsualizar_danfe')
+                    ->label('Pré-visualizar DANFe')
+                    ->icon('heroicon-o-document')
+                    ->color('gray')
+                    ->url(fn (Sale $record): string => route('sales.danfe-preview', $record))
+                    ->openUrlInNewTab(),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

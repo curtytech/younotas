@@ -45,7 +45,7 @@ class SaleItemsRelationManager extends RelationManager
                         }
 
                         $set('product_name', $product->name);
-                        $set('product_code', $product->code);
+                        $set('product_code', (string) $product->id);
                         $set('unit', $product->unit);
                         $set('unit_price', $product->sale_price);
                     }),

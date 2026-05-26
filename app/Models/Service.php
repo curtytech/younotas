@@ -30,6 +30,12 @@ class Service extends Model
         'csll_aliquot',
         'is_active',
         'notes',
+        'focus_nfse_ref',
+        'focus_nfse_status',
+        'focus_nfse_number',
+        'focus_nfse_url',
+        'focus_nfse_response',
+        'focus_nfse_last_sent_at',
     ];
 
     protected $casts = [
@@ -41,6 +47,8 @@ class Service extends Model
         'ir_aliquot' => 'decimal:2',
         'csll_aliquot' => 'decimal:2',
         'is_active' => 'boolean',
+        'focus_nfse_response' => 'array',
+        'focus_nfse_last_sent_at' => 'datetime',
     ];
 
     public function user(): BelongsTo

@@ -2,10 +2,12 @@
 
 namespace App\Filament\Resources;
 
+use App\Actions\EmitServiceNfseAction;
 use App\Filament\Resources\ServiceResource\Pages;
 use App\Models\Service;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -181,6 +183,12 @@ class ServiceResource extends Resource
                     ->label('Valor'),
                 Tables\Columns\TextColumn::make('iss_aliquot')
                     ->label('ISS %'),
+                Tables\Columns\TextColumn::make('focus_nfse_status')
+                    ->badge()
+                    ->label('NFS-e'),
+                Tables\Columns\TextColumn::make('focus_nfse_number')
+                    ->label('Numero NFS-e')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->label('Ativo'),
@@ -197,6 +205,20 @@ class ServiceResource extends Resource
                     ->label('Ativo'),
             ])
             ->actions([
+                Tables\Actions\Action::make('emitir_nfse')
+                    ->label('Emitir NFS-e')
+                    ->icon('heroicon-o-document-text')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->action(function (Service $record): void {
+                        $response = app(EmitServiceNfseAction::class)->execute($record);
+
+                        Notification::make()
+                            ->title('NFS-e enviada para a Focus')
+                            ->body($response['status'] ?? 'Requisicao enviada com sucesso.')
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

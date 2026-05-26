@@ -227,8 +227,9 @@ class ProductResource extends Resource
                     ->label('Usuário')
                     ->sortable()
                     ->visible(auth()->user()->role === 'admin'),
-                Tables\Columns\TextColumn::make('code')
+                Tables\Columns\TextColumn::make('id')
                     ->searchable()
+                    ->sortable()
                     ->label('Código'),
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
