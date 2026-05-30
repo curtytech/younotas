@@ -11,22 +11,26 @@ use RuntimeException;
 
 class FocusNfseService
 {
+    public function __construct(
+        protected FocusNfeConfigService $focusNfeConfigService,
+    ) {}
+
     public function emit(Service $service, ?string $reference = null): array
     {
-        $payload = $this->buildPayload($service);
+        $service->loadMissing(['client', 'user.focusNfeSetting']);
+
+        $focusConfig = $this->focusNfeConfigService->forUser($service->user);
+        $payload = $this->buildPayload($service, $focusConfig);
         $reference ??= (string) Str::uuid();
 
-        $response = Http::baseUrl(rtrim((string) config('services.focus_nfe.base_url'), '/'))
+        $response = Http::baseUrl(rtrim((string) ($focusConfig['base_url'] ?? config('services.focus_nfe.base_url')), '/'))
             ->withBasicAuth(
-                (string) config('services.focus_nfe.api_key'),
-                (string) config('services.focus_nfe.api_password', ''),
+                (string) ($focusConfig['api_key'] ?? config('services.focus_nfe.api_key')),
+                (string) ($focusConfig['api_password'] ?? config('services.focus_nfe.api_password', '')),
             )
             ->acceptJson()
             ->asJson()
             ->post('/v2/nfse?ref=' . $reference, $payload);
-
-        dd($payload);
-        // dd($response->json());
 
         try {
             $response->throw();
@@ -46,22 +50,22 @@ class FocusNfseService
         ];
     }
 
-    public function buildPayload(Service $service): array
+    public function buildPayload(Service $service, array $focusConfig): array
     {
-        $this->guardRequiredConfiguration();
+        $this->guardRequiredConfiguration($focusConfig);
         $this->guardRequiredModelData($service);
 
         $client = $service->client;
 
         return [
             'data_emissao' => now()->toIso8601String(),
-            'incentivador_cultural' => (bool) config('services.focus_nfe.nfse.incentivador_cultural', false),
-            'natureza_operacao' => (string) config('services.focus_nfe.nfse.natureza_operacao', '1'),
-            'optante_simples_nacional' => (bool) config('services.focus_nfe.nfse.optante_simples_nacional', true),
+            'incentivador_cultural' => (bool) ($focusConfig['nfse']['incentivador_cultural'] ?? false),
+            'natureza_operacao' => (string) ($focusConfig['nfse']['natureza_operacao'] ?? '1'),
+            'optante_simples_nacional' => (bool) ($focusConfig['nfse']['optante_simples_nacional'] ?? true),
             'prestador' => [
-                'cnpj' => $this->onlyDigits((string) config('services.focus_nfe.prestador.cnpj')),
-                'inscricao_municipal' => (string) config('services.focus_nfe.prestador.inscricao_municipal'),
-                'codigo_municipio' => $this->onlyDigits((string) config('services.focus_nfe.prestador.codigo_municipio')),
+                'cnpj' => $this->onlyDigits((string) ($focusConfig['prestador']['cnpj'] ?? '')),
+                'inscricao_municipal' => (string) ($focusConfig['prestador']['inscricao_municipal'] ?? ''),
+                'codigo_municipio' => $this->onlyDigits((string) ($focusConfig['prestador']['codigo_municipio'] ?? '')),
             ],
             'tomador' => array_filter([
                 $this->getTomadorDocumentKey($client) => $this->getTomadorDocumentValue($client),
@@ -73,7 +77,7 @@ class FocusNfseService
                     'numero' => $client->address_number ?: 'S/N',
                     'complemento' => $client->address_complement,
                     'bairro' => $client->neighborhood,
-                    'codigo_municipio' => $this->resolveTomadorMunicipioCode($client),
+                    'codigo_municipio' => $this->resolveTomadorMunicipioCode($client, $focusConfig),
                     'uf' => $client->state,
                     'cep' => $this->onlyDigits((string) $client->zip_code),
                 ]),
@@ -88,18 +92,18 @@ class FocusNfseService
         ];
     }
 
-    protected function guardRequiredConfiguration(): void
+    protected function guardRequiredConfiguration(array $focusConfig): void
     {
         $required = [
-            'services.focus_nfe.api_key' => 'FOCUS_NFE_API_KEY',
-            'services.focus_nfe.prestador.cnpj' => 'FOCUS_NFE_PRESTADOR_CNPJ',
-            'services.focus_nfe.prestador.inscricao_municipal' => 'FOCUS_NFE_PRESTADOR_INSCRICAO_MUNICIPAL',
-            'services.focus_nfe.prestador.codigo_municipio' => 'FOCUS_NFE_PRESTADOR_CODIGO_MUNICIPIO',
+            'api_key' => 'API Key da Focus',
+            'prestador.cnpj' => 'CNPJ do prestador',
+            'prestador.inscricao_municipal' => 'Inscrição municipal do prestador',
+            'prestador.codigo_municipio' => 'Código do município do prestador',
         ];
 
-        foreach ($required as $configKey => $envName) {
-            if (blank(config($configKey))) {
-                throw new RuntimeException("Configure {$envName} antes de emitir a NFS-e.");
+        foreach ($required as $configKey => $label) {
+            if (blank(data_get($focusConfig, $configKey))) {
+                throw new RuntimeException("Configure {$label} na Configuração Fiscal antes de emitir a NFS-e.");
             }
         }
     }
@@ -148,15 +152,15 @@ class FocusNfseService
         };
     }
 
-    protected function resolveTomadorMunicipioCode(Client $client): string
+    protected function resolveTomadorMunicipioCode(Client $client, array $focusConfig): string
     {
         $zipCode = $this->onlyDigits((string) $client->zip_code);
 
         if (blank($zipCode)) {
-            return $this->onlyDigits((string) config('services.focus_nfe.prestador.codigo_municipio'));
+            return $this->onlyDigits((string) ($focusConfig['prestador']['codigo_municipio'] ?? ''));
         }
 
-        return $this->onlyDigits((string) config('services.focus_nfe.prestador.codigo_municipio'));
+        return $this->onlyDigits((string) ($focusConfig['prestador']['codigo_municipio'] ?? ''));
     }
 
     protected function onlyDigits(string $value): string
