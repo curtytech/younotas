@@ -35,7 +35,12 @@ class Service extends Model
         'focus_nfse_number',
         'focus_nfse_url',
         'focus_nfse_response',
+        'focus_nfse_response_secure',
+        'focus_nfse_payload',
+        'focus_nfse_error',
+        'focus_nfse_attempts',
         'focus_nfse_last_sent_at',
+        'focus_nfse_last_checked_at',
     ];
 
     protected $casts = [
@@ -48,7 +53,12 @@ class Service extends Model
         'csll_aliquot' => 'decimal:2',
         'is_active' => 'boolean',
         'focus_nfse_response' => 'array',
+        'focus_nfse_response_secure' => 'encrypted:array',
+        'focus_nfse_payload' => 'encrypted:array',
+        'focus_nfse_error' => 'encrypted:array',
+        'focus_nfse_attempts' => 'integer',
         'focus_nfse_last_sent_at' => 'datetime',
+        'focus_nfse_last_checked_at' => 'datetime',
     ];
 
     public function user(): BelongsTo

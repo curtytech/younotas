@@ -2,8 +2,9 @@
 
 namespace App\Filament\Resources\ServiceResource\Pages;
 
-use App\Actions\EmitServiceNfseAction;
 use App\Filament\Resources\ServiceResource;
+use App\Jobs\EmitServiceNfseJob;
+use App\Support\NfseStatus;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
@@ -28,13 +29,14 @@ class EditService extends EditRecord
                 ->label('Emitir NFS-e')
                 ->icon('heroicon-o-document-text')
                 ->color('success')
+                ->visible(fn (): bool => NfseStatus::canEmit($this->record->focus_nfse_status))
                 ->requiresConfirmation()
                 ->action(function (): void {
-                    $response = app(EmitServiceNfseAction::class)->execute($this->record);
+                    EmitServiceNfseJob::dispatch($this->record->id);
 
                     Notification::make()
-                        ->title('NFS-e enviada para a Focus')
-                        ->body($response['status'] ?? 'Requisicao enviada com sucesso.')
+                        ->title('Emissão da NFS-e agendada')
+                        ->body('O processamento será acompanhado automaticamente.')
                         ->success()
                         ->send();
                 }),

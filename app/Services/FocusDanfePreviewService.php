@@ -110,7 +110,7 @@ class FocusDanfePreviewService
                 ? (string) $saleItem->product->getKey()
                 : ($saleItem->product_code ?: (string) $saleItem->product_id),
             'descricao' => $saleItem->product_name,
-            'cfop' => (string) ($product?->cfop ?? ($focusConfig['nfe']['cfop_padrao'] ?? '5102')),
+            'cfop' => (string) ($product?->cfop_code ?? ($focusConfig['nfe']['cfop_padrao'] ?? '5102')),
             'unidade_comercial' => $this->normalizeUnit((string) $saleItem->unit),
             'quantidade_comercial' => $this->formatDecimal((float) $saleItem->quantity, 3),
             'valor_unitario_comercial' => $this->formatDecimal((float) $saleItem->unit_price, 4),

@@ -63,11 +63,6 @@ class FocusNfeSettingResource extends Resource
                             ->string()
                             ->maxLength(255)
                             ->label('API Key'),
-                        Forms\Components\TextInput::make('settings.api_password')
-                            ->password()
-                            ->revealable()
-                            ->maxLength(255)
-                            ->label('API Password'),
                         Forms\Components\Select::make('settings.base_url')
                             ->required()
                             ->options([

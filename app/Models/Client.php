@@ -23,6 +23,7 @@ class Client extends Model
         'address_complement',
         'neighborhood',
         'city',
+        'ibge_code',
         'state',
         'zip_code',
         'country',

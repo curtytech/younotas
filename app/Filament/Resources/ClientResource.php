@@ -92,7 +92,7 @@ class ClientResource extends Resource
                     ->minLength(3)
                     ->maxLength(15)
                     ->label('Inscrição Estadual'),
-                
+
                 Forms\Components\TextInput::make('document')
                     ->required()
                     ->string()
@@ -148,6 +148,12 @@ class ClientResource extends Resource
                     ->minLength(2)
                     ->maxLength(255)
                     ->label('Cidade'),
+                Forms\Components\TextInput::make('ibge_code')
+                    ->required()
+                    ->numeric()
+                    ->length(7)
+                    ->helperText('Código IBGE de 7 dígitos do município do tomador.')
+                    ->label('Código IBGE do município'),
                 Forms\Components\TextInput::make('state')
                     ->string()
                     ->length(2)

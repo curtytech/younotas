@@ -2,9 +2,12 @@
 
 namespace App\Filament\Resources;
 
-use App\Actions\EmitServiceNfseAction;
 use App\Filament\Resources\ServiceResource\Pages;
+use App\Jobs\CancelServiceNfseJob;
+use App\Jobs\ConsultServiceNfseJob;
+use App\Jobs\EmitServiceNfseJob;
 use App\Models\Service;
+use App\Support\NfseStatus;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -13,6 +16,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Throwable;
 
 class ServiceResource extends Resource
 {
@@ -47,14 +51,14 @@ class ServiceResource extends Resource
             ->schema([
                 auth()->user()->role === 'admin'
                     ? Forms\Components\Select::make('user_id')
-                    ->relationship('user', 'name')
-                    ->searchable()
-                    ->preload()
-                    ->default(auth()->id())
-                    ->required()
-                    ->label('Usuário')
+                        ->relationship('user', 'name')
+                        ->searchable()
+                        ->preload()
+                        ->default(auth()->id())
+                        ->required()
+                        ->label('Usuário')
                     : Forms\Components\Hidden::make('user_id')
-                    ->default(auth()->id()),
+                        ->default(auth()->id()),
                 Forms\Components\Select::make('client_id')
                     ->relationship('client', 'name', function (Builder $query) {
                         if (auth()->user()->role !== 'admin') {
@@ -72,7 +76,7 @@ class ServiceResource extends Resource
                     ->maxLength(255)
                     ->unique(
                         ignoreRecord: true,
-                        modifyRuleUsing: fn($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
                     )
                     ->label('Código'),
                 Forms\Components\TextInput::make('name')
@@ -114,37 +118,37 @@ class ServiceResource extends Resource
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota ISS'),
+                    ->label('Alíquota ISS %'),
                 Forms\Components\TextInput::make('pis_aliquot')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota PIS'),
+                    ->label('Alíquota PIS %'),
                 Forms\Components\TextInput::make('cofins_aliquot')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota COFINS'),
+                    ->label('Alíquota COFINS %'),
                 Forms\Components\TextInput::make('inss_aliquot')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota INSS'),
+                    ->label('Alíquota INSS %'),
                 Forms\Components\TextInput::make('ir_aliquot')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota IR'),
+                    ->label('Alíquota IR %'),
                 Forms\Components\TextInput::make('csll_aliquot')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(100)
-                    ->label('Alíquota CSLL'),
+                    ->label('Alíquota CSLL %'),
                 Forms\Components\Textarea::make('description')
                     ->rows(3)
                     ->maxLength(65535)
@@ -185,9 +189,23 @@ class ServiceResource extends Resource
                     ->label('ISS %'),
                 Tables\Columns\TextColumn::make('focus_nfse_status')
                     ->badge()
+                    ->color(fn (?string $state): string => match ($state) {
+                        'autorizado' => 'success',
+                        'processando' => 'warning',
+                        'erro_autorizacao' => 'danger',
+                        'cancelado' => 'gray',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'autorizado' => 'Autorizada',
+                        'processando' => 'Processando',
+                        'erro_autorizacao' => 'Erro Autorização',
+                        'cancelado' => 'Cancelada',
+                        default => 'Não emitida',
+                    })
                     ->label('NFS-e'),
                 Tables\Columns\TextColumn::make('focus_nfse_number')
-                    ->label('Numero NFS-e')
+                    ->label('Número NFS-e')
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
@@ -197,7 +215,7 @@ class ServiceResource extends Resource
                 Tables\Filters\SelectFilter::make('user_id')
                     ->relationship('user', 'name')
                     ->label('Usuário')
-                    ->visible(fn(): bool => auth()->user()->role === 'admin'),
+                    ->visible(fn (): bool => auth()->user()->role === 'admin'),
                 Tables\Filters\SelectFilter::make('client_id')
                     ->relationship('client', 'name')
                     ->label('Cliente'),
@@ -209,16 +227,87 @@ class ServiceResource extends Resource
                     ->label('Emitir NFS-e')
                     ->icon('heroicon-o-document-text')
                     ->color('success')
+                    ->visible(fn (Service $record): bool => NfseStatus::canEmit($record->focus_nfse_status))
                     ->requiresConfirmation()
                     ->action(function (Service $record): void {
-                        $response = app(EmitServiceNfseAction::class)->execute($record);
+                        try {
+                            EmitServiceNfseJob::dispatch($record->id);
 
-                        Notification::make()
-                            ->title('NFS-e enviada para a Focus')
-                            ->body($response['status'] ?? 'Requisicao enviada com sucesso.')
-                            ->success()
-                            ->send();
+                            Notification::make()
+                                ->title('Emissão da NFS-e agendada')
+                                ->body('O processamento será acompanhado automaticamente.')
+                                ->success()
+                                ->send();
+                        } catch (Throwable $e) {
+                            Notification::make()
+                                ->title('Erro ao emitir NFS-e')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
                     }),
+
+                Tables\Actions\Action::make('consultar_nfse')
+                    ->label('Consultar Status')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('info')
+                    ->visible(fn (Service $record): bool => ! blank($record->focus_nfse_ref))
+                    ->action(function (Service $record): void {
+                        try {
+                            ConsultServiceNfseJob::dispatch($record->id);
+
+                            Notification::make()
+                                ->title('Consulta da NFS-e agendada')
+                                ->body('O status será atualizado em instantes.')
+                                ->info()
+                                ->send();
+                        } catch (Throwable $e) {
+                            Notification::make()
+                                ->title('Erro ao consultar NFS-e')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('ver_danfse')
+                    ->label('Ver DANFSE')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->color('warning')
+                    ->url(fn (Service $record): ?string => $record->focus_nfse_url, shouldOpenInNewTab: true)
+                    ->visible(fn (Service $record): bool => ! blank($record->focus_nfse_url)),
+
+                Tables\Actions\Action::make('cancelar_nfse')
+                    ->label('Cancelar NFS-e')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(fn (Service $record): bool => $record->focus_nfse_status === 'autorizado')
+                    ->form([
+                        Forms\Components\Textarea::make('justification')
+                            ->label('Justificativa do Cancelamento')
+                            ->required()
+                            ->minLength(15)
+                            ->maxLength(255)
+                            ->placeholder('Informe a justificativa do cancelamento exigida pela prefeitura.'),
+                    ])
+                    ->action(function (Service $record, array $data): void {
+                        try {
+                            CancelServiceNfseJob::dispatch($record->id, $data['justification']);
+
+                            Notification::make()
+                                ->title('Cancelamento da NFS-e agendado')
+                                ->body('O resultado será atualizado automaticamente.')
+                                ->success()
+                                ->send();
+                        } catch (Throwable $e) {
+                            Notification::make()
+                                ->title('Erro ao cancelar NFS-e')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([

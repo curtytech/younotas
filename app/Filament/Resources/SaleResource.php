@@ -4,8 +4,12 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource\RelationManagers\SaleItemsRelationManager;
+use App\Jobs\CancelSaleNfeJob;
+use App\Jobs\ConsultSaleNfeJob;
+use App\Jobs\EmitSaleNfeJob;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Support\NfeStatus;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -347,6 +351,21 @@ class SaleResource extends Resource
                 Tables\Columns\IconColumn::make('issue_invoice')
                     ->boolean()
                     ->label('NF'),
+                Tables\Columns\TextColumn::make('focus_nfe_status')
+                    ->badge()
+                    ->placeholder('Não emitida')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        NfeStatus::SENDING => 'Enviando', NfeStatus::PROCESSING => 'Processando',
+                        NfeStatus::AUTHORIZED => 'Autorizada', NfeStatus::CANCELED => 'Cancelada',
+                        NfeStatus::AUTHORIZATION_ERROR => 'Erro de autorização',
+                        NfeStatus::TRANSPORT_ERROR => 'Erro de envio', default => 'Não emitida',
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        NfeStatus::AUTHORIZED => 'success', NfeStatus::CANCELED => 'gray',
+                        NfeStatus::PROCESSING, NfeStatus::SENDING => 'warning',
+                        NfeStatus::AUTHORIZATION_ERROR, NfeStatus::TRANSPORT_ERROR => 'danger', default => 'gray',
+                    })
+                    ->label('NF-e'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('BRL')
                     ->label('Total'),
@@ -381,6 +400,24 @@ class SaleResource extends Resource
                     ->color('gray')
                     ->url(fn (Sale $record): string => route('sales.danfe-preview', $record))
                     ->openUrlInNewTab(),
+                Tables\Actions\Action::make('emitir_nfe')
+                    ->label('Emitir NF-e')->icon('heroicon-o-paper-airplane')
+                    ->visible(fn (Sale $record): bool => NfeStatus::canEmit($record->focus_nfe_status))
+                    ->requiresConfirmation()
+                    ->action(fn (Sale $record): mixed => EmitSaleNfeJob::dispatch($record->id))
+                    ->successNotificationTitle('Emissão da NF-e enfileirada.'),
+                Tables\Actions\Action::make('consultar_nfe')
+                    ->label('Consultar NF-e')->icon('heroicon-o-arrow-path')
+                    ->visible(fn (Sale $record): bool => filled($record->focus_nfe_ref) && $record->focus_nfe_status === NfeStatus::PROCESSING)
+                    ->action(fn (Sale $record): mixed => ConsultSaleNfeJob::dispatch($record->id))
+                    ->successNotificationTitle('Consulta da NF-e enfileirada.'),
+                Tables\Actions\Action::make('cancelar_nfe')
+                    ->label('Cancelar NF-e')->icon('heroicon-o-x-circle')->color('danger')
+                    ->visible(fn (Sale $record): bool => NfeStatus::canCancel($record->focus_nfe_status))
+                    ->requiresConfirmation()
+                    ->form([Forms\Components\Textarea::make('justification')->label('Justificativa')->required()->minLength(15)->maxLength(255)])
+                    ->action(fn (Sale $record, array $data): mixed => CancelSaleNfeJob::dispatch($record->id, $data['justification']))
+                    ->successNotificationTitle('Cancelamento da NF-e enfileirado.'),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
@@ -459,7 +496,7 @@ class SaleResource extends Resource
             return null;
         }
 
-        $message = 'Estoque disponivel: ' . number_format($availableStock, 3, ',', '.');
+        $message = 'Estoque disponivel: '.number_format($availableStock, 3, ',', '.');
 
         if ($requestedQuantity > $availableStock) {
             $message .= '. A quantidade informada e maior que o estoque e a venda nao sera salva.';
