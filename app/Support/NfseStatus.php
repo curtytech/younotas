@@ -20,6 +20,19 @@ class NfseStatus
 
     public const TRANSPORT_ERROR = 'erro_emissao';
 
+    public static function normalize(?string $status): ?string
+    {
+        return match ($status) {
+            'processando', 'processando_autorizacao', 'enviando' => self::PROCESSING,
+            'autorizado' => self::AUTHORIZED,
+            'cancelado' => self::CANCELED,
+            'erro_autorizacao' => self::AUTHORIZATION_ERROR,
+            'erro_cancelamento' => self::CANCELLATION_ERROR,
+            'erro_emissao' => self::TRANSPORT_ERROR,
+            default => $status,
+        };
+    }
+
     public static function canEmit(?string $status): bool
     {
         return in_array($status, [self::DRAFT, self::AUTHORIZATION_ERROR, self::TRANSPORT_ERROR], true);
@@ -32,6 +45,8 @@ class NfseStatus
 
     public static function shouldReplace(?string $current, ?string $incoming): bool
     {
+        $incoming = self::normalize($incoming);
+
         if (blank($incoming) || $current === $incoming) {
             return false;
         }

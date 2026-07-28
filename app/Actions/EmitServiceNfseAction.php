@@ -31,7 +31,7 @@ class EmitServiceNfseAction
 
             $config = $this->focusNfseService->configurationFor($locked);
             $reference = $locked->focus_nfse_ref ?: (string) Str::uuid();
-            $payload = in_array($locked->focus_nfse_status, [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::TRANSPORT_ERROR], true)
+            $payload = $locked->focus_nfse_status === NfseStatus::AUTHORIZATION_ERROR
                 ? $this->focusNfseService->buildPayload($locked, $config)
                 : ($locked->focus_nfse_payload ?: $this->focusNfseService->buildPayload($locked, $config));
 
@@ -99,7 +99,7 @@ class EmitServiceNfseAction
     protected function persistResponse(int $serviceId, string $reference, array $response): void
     {
         $service = Service::query()->whereKey($serviceId)->where('focus_nfse_ref', $reference)->firstOrFail();
-        $status = $response['status'] ?? NfseStatus::PROCESSING;
+        $status = NfseStatus::normalize($response['status'] ?? NfseStatus::PROCESSING);
 
         $service->update([
             'focus_nfse_status' => $status,

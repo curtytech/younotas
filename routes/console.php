@@ -1,12 +1,14 @@
 <?php
 
 use App\Jobs\ConsultSaleNfeJob;
+use App\Jobs\ReconcilePendingFocusNfeWebhooksJob;
 use App\Jobs\ReconcilePendingFocusNfseWebhooksJob;
 use App\Models\Sale;
 use App\Support\NfeStatus;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::job(new ReconcilePendingFocusNfseWebhooksJob)->everyFiveMinutes()->withoutOverlapping();
+Schedule::job(new ReconcilePendingFocusNfeWebhooksJob)->everyFiveMinutes()->withoutOverlapping();
 
 Schedule::call(function (): void {
     Sale::query()->where('focus_nfe_status', NfeStatus::PROCESSING)

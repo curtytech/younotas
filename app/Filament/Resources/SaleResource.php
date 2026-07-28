@@ -376,6 +376,11 @@ class SaleResource extends Resource
                     ->label('Última consulta')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('focus_nfe_last_webhook_at')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->label('Último webhook')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('BRL')
                     ->label('Total'),

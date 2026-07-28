@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\HandleFocusNfeWebhookAction;
+use App\Jobs\ReconcileFocusNfeWebhooksJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -31,6 +32,10 @@ class FocusNfeWebhookController extends Controller
         }
 
         $sale = $action->execute($payload);
+
+        if (! $sale && filled($payload['ref'] ?? $payload['referencia'] ?? null)) {
+            ReconcileFocusNfeWebhooksJob::dispatch($payload['ref'] ?? $payload['referencia']);
+        }
 
         return response()->json([
             'success' => true,

@@ -18,5 +18,6 @@ class FiscalDocument extends Model
         'issued_at' => 'date',
         'last_sent_at' => 'datetime',
         'last_checked_at' => 'datetime',
+        'last_webhook_at' => 'datetime',
     ];
 }

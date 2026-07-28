@@ -32,7 +32,7 @@ class HandleFocusNfseWebhookAction
                 return null;
             }
 
-            $incomingStatus = $payload['status'] ?? null;
+            $incomingStatus = NfseStatus::normalize($payload['status'] ?? null);
             $status = NfseStatus::shouldReplace($service->focus_nfse_status, $incomingStatus)
                 ? $incomingStatus
                 : $service->focus_nfse_status;
@@ -40,7 +40,8 @@ class HandleFocusNfseWebhookAction
             $service->update([
                 'focus_nfse_status' => $status,
                 'focus_nfse_number' => $payload['numero'] ?? $payload['numero_rps'] ?? $service->focus_nfse_number,
-                'focus_nfse_url' => $payload['url'] ?? $payload['url_danfe'] ?? $service->focus_nfse_url,
+                'focus_nfse_url' => $this->resolveDocumentUrl($payload, $service),
+                'focus_nfse_last_webhook_at' => now(),
                 'focus_nfse_response_secure' => array_replace($service->focus_nfse_response_secure ?? [], $payload),
                 'focus_nfse_response' => null,
                 'focus_nfse_error' => in_array($status, [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::CANCELLATION_ERROR], true)
@@ -52,5 +53,22 @@ class HandleFocusNfseWebhookAction
 
             return $service;
         });
+    }
+
+    private function resolveDocumentUrl(array $payload, Service $service): ?string
+    {
+        $url = $payload['url'] ?? $payload['url_danfe'] ?? $payload['caminho_danfse'] ?? $payload['caminho_danfe'] ?? null;
+
+        if (blank($url)) {
+            return $service->focus_nfse_url;
+        }
+
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        $baseUrl = data_get($service->user?->focusNfeSetting?->settings, 'base_url', config('services.focus_nfe.base_url'));
+
+        return rtrim((string) $baseUrl, '/').'/'.ltrim($url, '/');
     }
 }

@@ -180,6 +180,19 @@ test('pode receber webhook de atualizacao de nfse da focus nfe', function (): vo
     expect($this->service->focus_nfse_url)->toBe('https://homologacao.focusnfe.com.br/danfse/202600099.pdf');
 });
 
+test('normaliza o status processando_autorizacao recebido no webhook de nfse', function (): void {
+    $this->service->update(['focus_nfse_ref' => 'ref-webhook-processing', 'focus_nfse_status' => 'enviando']);
+
+    $this->postJson('/api/webhooks/focus-nfse?token=webhook-test-secret', [
+        'ref' => 'ref-webhook-processing',
+        'status' => 'processando_autorizacao',
+        'numero_rps' => '10',
+    ])->assertOk()->assertJson(['status' => 'processando']);
+
+    expect($this->service->refresh()->focus_nfse_status)->toBe('processando')
+        ->and($this->service->focus_nfse_last_webhook_at)->not->toBeNull();
+});
+
 test('usa o código IBGE do tomador, não o do prestador', function (): void {
     $this->client->update(['ibge_code' => '3304557']);
 

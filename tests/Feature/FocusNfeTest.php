@@ -4,6 +4,7 @@ use App\Actions\CancelSaleNfeAction;
 use App\Actions\ConsultSaleNfeAction;
 use App\Actions\EmitSaleNfeAction;
 use App\Models\Client;
+use App\Models\FocusNfeWebhookEvent;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
@@ -78,6 +79,29 @@ test('consulta e cancela uma NF-e autorizada', function (): void {
 
     app(CancelSaleNfeAction::class)->execute($this->sale, 'Cancelamento por erro de emissão.');
     expect($this->sale->refresh()->focus_nfe_status)->toBe('cancelado');
+});
+
+test('processa webhook de NF-e de forma idempotente', function (): void {
+    config(['services.focus_nfe.webhook_secret' => 'webhook-test-secret']);
+    $this->sale->update(['focus_nfe_ref' => 'sale-webhook-001', 'focus_nfe_status' => 'processando']);
+
+    $payload = [
+        'ref' => 'sale-webhook-001',
+        'status' => 'autorizado',
+        'numero' => '123',
+        'url_danfe' => 'https://example.test/danfe.pdf',
+    ];
+
+    $this->postJson('/api/webhooks/focus-nfe?token=webhook-test-secret', $payload)
+        ->assertOk()
+        ->assertJson(['success' => true, 'status' => 'autorizado']);
+    $this->postJson('/api/webhooks/focus-nfe?token=webhook-test-secret', $payload)
+        ->assertOk();
+
+    expect($this->sale->refresh()->focus_nfe_status)->toBe('autorizado')
+        ->and($this->sale->focus_nfe_number)->toBe('123')
+        ->and($this->sale->focus_nfe_last_webhook_at)->not->toBeNull()
+        ->and(FocusNfeWebhookEvent::where('reference', 'sale-webhook-001')->count())->toBe(1);
 });
 
 test('converte CFOP interno em interestadual para destinatário de outra UF', function (): void {

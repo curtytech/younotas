@@ -217,6 +217,11 @@ class ServiceResource extends Resource
                     ->label('Última consulta')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('focus_nfse_last_webhook_at')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->label('Último webhook')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->label('Ativo'),

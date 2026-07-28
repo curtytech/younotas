@@ -94,6 +94,11 @@ class FiscalDocumentResource extends Resource
                     ->placeholder('—')
                     ->sortable()
                     ->label('Última consulta'),
+                Tables\Columns\TextColumn::make('last_webhook_at')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->label('Último webhook'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('document_type')

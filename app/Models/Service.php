@@ -41,6 +41,7 @@ class Service extends Model
         'focus_nfse_attempts',
         'focus_nfse_last_sent_at',
         'focus_nfse_last_checked_at',
+        'focus_nfse_last_webhook_at',
     ];
 
     protected $casts = [
@@ -59,6 +60,7 @@ class Service extends Model
         'focus_nfse_attempts' => 'integer',
         'focus_nfse_last_sent_at' => 'datetime',
         'focus_nfse_last_checked_at' => 'datetime',
+        'focus_nfse_last_webhook_at' => 'datetime',
     ];
 
     public function user(): BelongsTo

@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Exceptions\FocusNfeRequestException;
 use App\Jobs\ConsultSaleNfeJob;
+use App\Jobs\ReconcileFocusNfeWebhooksJob;
 use App\Models\Sale;
 use App\Services\FocusNfeService;
 use App\Support\NfeStatus;
@@ -47,6 +48,8 @@ class EmitSaleNfeAction
 
             return [$locked, $reference, $payload, $config];
         });
+
+        ReconcileFocusNfeWebhooksJob::dispatch($reference);
 
         try {
             $response = $this->focusNfeService->emit($config, $reference, $payload);

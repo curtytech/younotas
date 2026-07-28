@@ -11,6 +11,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 
 class FocusNfeSettingResource extends Resource
 {
@@ -44,6 +45,7 @@ class FocusNfeSettingResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Responsável')
+                    ->description('Defina a empresa ou usuário ao qual esta configuração pertence.')
                     ->schema([
                         auth()->user()->role === 'admin'
                             ? Forms\Components\Select::make('user_id')
@@ -57,6 +59,7 @@ class FocusNfeSettingResource extends Resource
                                 ->default(auth()->id()),
                     ]),
                 Forms\Components\Section::make('API Focus')
+                    ->description('Credenciais e ambiente usados para emitir documentos fiscais.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.api_key')
                             ->required()
@@ -73,8 +76,37 @@ class FocusNfeSettingResource extends Resource
                             ->native(false)
                             ->label('Ambiente'),
                     ])
-                    ->columns(3),
+                    ->columns(2)
+                    ->collapsible(),
+                Forms\Components\Section::make('Webhooks Focus NFe')
+                    ->icon('heroicon-o-bolt')
+                    ->description('Receba automaticamente as alterações de status das NF-e e NFS-e.')
+                    ->schema([
+                        Forms\Components\Placeholder::make('webhook_instrucoes')
+                            ->label('Como configurar')
+                            ->content(new HtmlString(
+                                '<div class="space-y-3 text-sm text-gray-300">'
+                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">1</span><p>Defina <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">FOCUS_NFE_WEBHOOK_SECRET</code> no arquivo <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">.env</code>.</p></div>'
+                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">2</span><p>Cadastre as duas URLs abaixo na configuração de webhooks da Focus NFe.</p></div>'
+                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">3</span><p>A aplicação precisa estar publicada em uma URL HTTPS acessível pela Focus.</p></div>'
+                                .'<div class="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-amber-200">O webhook atualiza automaticamente a situação, número, link e resposta do documento. Sem webhook, o sistema continua consultando o status pela fila.</div>'
+                                .'</div>'
+                            ))
+                            ->columnSpanFull(),
+                        Forms\Components\Placeholder::make('webhook_url_nfe')
+                            ->label('URL do webhook NF-e')
+                            ->content(fn (): HtmlString => new HtmlString('<div class="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 font-mono text-xs text-gray-300 break-all">'.e(rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfe').'</div>')),
+                        Forms\Components\Placeholder::make('webhook_url_nfse')
+                            ->label('URL do webhook NFS-e')
+                            ->content(fn (): HtmlString => new HtmlString('<div class="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 font-mono text-xs text-gray-300 break-all">'.e(rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfse').'</div>')),
+                        Forms\Components\Placeholder::make('webhook_security')
+                            ->label('Autenticação')
+                            ->content(new HtmlString('<div class="text-sm text-gray-300">A Focus deve enviar o segredo no cabeçalho <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">X-Focus-Nfe-Secret</code> ou no parâmetro <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">?token=</code>. Nunca coloque o segredo nas URLs acima.</div>'))
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2),
                 Forms\Components\Section::make('Prestador NFS-e')
+                    ->description('Dados municipais e tributários usados na emissão de serviços.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.prestador.cnpj')
                             ->required()
@@ -104,8 +136,10 @@ class FocusNfeSettingResource extends Resource
                             ->default(true)
                             ->label('Optante Simples Nacional'),
                     ])
-                    ->columns(3),
+                    ->columns(3)
+                    ->collapsible(),
                 Forms\Components\Section::make('Emitente NF-e')
+                    ->description('Dados cadastrais exibidos como emitente na NF-e.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.nfe.emitente.nome')
                             ->required()
@@ -163,8 +197,10 @@ class FocusNfeSettingResource extends Resource
                             ->native(false)
                             ->label('Regime tributário'),
                     ])
-                    ->columns(3),
+                    ->columns(3)
+                    ->collapsible(),
                 Forms\Components\Section::make('Regras NF-e')
+                    ->description('Parâmetros fiscais padrão para vendas de mercadorias.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.nfe.natureza_operacao')
                             ->required()
@@ -258,7 +294,8 @@ class FocusNfeSettingResource extends Resource
                             ->minValue(0)
                             ->label('Outras despesas'),
                     ])
-                    ->columns(3),
+                    ->columns(3)
+                    ->collapsible(),
             ]);
     }
 

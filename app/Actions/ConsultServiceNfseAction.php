@@ -32,7 +32,7 @@ class ConsultServiceNfseAction
         }
 
         $service->refresh();
-        $incomingStatus = $response['status'] ?? null;
+        $incomingStatus = NfseStatus::normalize($response['status'] ?? null);
         $status = NfseStatus::shouldReplace($service->focus_nfse_status, $incomingStatus)
             ? $incomingStatus
             : $service->focus_nfse_status;
