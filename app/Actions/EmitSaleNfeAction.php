@@ -32,7 +32,9 @@ class EmitSaleNfeAction
             $config = $this->focusNfeService->configurationFor($locked);
             // A Focus reference must be alphanumeric; it is also reused on retries.
             $reference = $locked->focus_nfe_ref ?: 'sale'.$locked->id.Str::lower(Str::random(8));
-            $payload = $locked->focus_nfe_payload ?: $this->focusNfeService->buildPayload($locked, $config);
+            $payload = $locked->focus_nfe_status === NfeStatus::AUTHORIZATION_ERROR
+                ? $this->focusNfeService->buildPayload($locked, $config)
+                : ($locked->focus_nfe_payload ?: $this->focusNfeService->buildPayload($locked, $config));
 
             $locked->update([
                 'focus_nfe_ref' => $reference,
@@ -61,7 +63,7 @@ class EmitSaleNfeAction
             throw $exception;
         }
 
-        $this->persistResponse($prepared->id, $reference, $response);
+        $this->persistResponse($prepared->id, $reference, $response, $config);
         $sale = Sale::findOrFail($prepared->id);
         if ($sale->focus_nfe_status === NfeStatus::PROCESSING) {
             ConsultSaleNfeJob::dispatch($sale->id)->delay(now()->addMinute());
@@ -80,16 +82,31 @@ class EmitSaleNfeAction
         ]]);
     }
 
-    protected function persistResponse(int $saleId, string $reference, array $response): void
+    protected function persistResponse(int $saleId, string $reference, array $response, array $config): void
     {
         $sale = Sale::query()->whereKey($saleId)->where('focus_nfe_ref', $reference)->firstOrFail();
         $status = NfeStatus::normalize($response['status'] ?? NfeStatus::PROCESSING);
         $sale->update([
             'focus_nfe_status' => $status,
             'focus_nfe_number' => $response['numero'] ?? $response['numero_nfe'] ?? $sale->focus_nfe_number,
-            'focus_nfe_url' => $response['url_danfe'] ?? $response['url'] ?? $sale->focus_nfe_url,
+            'focus_nfe_url' => $this->resolveDocumentUrl($response, $config) ?? $sale->focus_nfe_url,
             'focus_nfe_response_secure' => $response,
             'focus_nfe_error' => $status === NfeStatus::AUTHORIZATION_ERROR ? ['response' => $response, 'at' => now()->toIso8601String()] : null,
         ]);
+    }
+
+    protected function resolveDocumentUrl(array $response, array $config): ?string
+    {
+        $url = $response['url_danfe'] ?? $response['url'] ?? $response['caminho_danfe'] ?? null;
+
+        if (blank($url)) {
+            return null;
+        }
+
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        return rtrim((string) ($config['base_url'] ?? ''), '/').'/'.ltrim($url, '/');
     }
 }

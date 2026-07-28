@@ -207,6 +207,16 @@ class ServiceResource extends Resource
                 Tables\Columns\TextColumn::make('focus_nfse_number')
                     ->label('Número NFS-e')
                     ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('focus_nfse_error.message')
+                    ->label('Último erro')
+                    ->color('danger')
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('focus_nfse_last_checked_at')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->label('Última consulta')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->label('Ativo'),

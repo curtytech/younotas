@@ -366,6 +366,16 @@ class SaleResource extends Resource
                         NfeStatus::AUTHORIZATION_ERROR, NfeStatus::TRANSPORT_ERROR => 'danger', default => 'gray',
                     })
                     ->label('NF-e'),
+                Tables\Columns\TextColumn::make('focus_nfe_error.message')
+                    ->label('Último erro')
+                    ->color('danger')
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('focus_nfe_last_checked_at')
+                    ->dateTime('d/m/Y H:i:s')
+                    ->label('Última consulta')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('BRL')
                     ->label('Total'),

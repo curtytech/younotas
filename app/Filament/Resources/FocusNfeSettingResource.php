@@ -62,7 +62,7 @@ class FocusNfeSettingResource extends Resource
                             ->required()
                             ->string()
                             ->maxLength(255)
-                            ->label('API Key'),
+                            ->label('Token'),
                         Forms\Components\Select::make('settings.base_url')
                             ->required()
                             ->options([

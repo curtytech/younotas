@@ -60,9 +60,10 @@ class FocusDanfePreviewService
         $emitente = $this->resolveEmitenteData($sale->user, $focusConfig);
         $destinatario = $this->resolveDestinatarioData($sale->client);
         $this->guardRequiredEmitenteData($emitente);
+        $localDestino = $this->resolveLocalDestino($emitente['uf_emitente'], $destinatario['uf_destinatario']);
         $items = $sale->saleItems
             ->values()
-            ->map(fn (SaleItem $item, int $index): array => $this->buildItemPayload($item, $index + 1, $focusConfig))
+            ->map(fn (SaleItem $item, int $index): array => $this->buildItemPayload($item, $index + 1, $focusConfig, $localDestino))
             ->all();
 
         return array_filter([
@@ -72,7 +73,7 @@ class FocusDanfePreviewService
             'data_entrada_saida' => $sale->sale_date?->copy()->endOfDay()->toIso8601String()
                 ?? now()->toIso8601String(),
             'tipo_documento' => (int) ($focusConfig['nfe']['tipo_documento'] ?? 1),
-            'local_destino' => $this->resolveLocalDestino($emitente['uf_emitente'], $destinatario['uf_destinatario']),
+            'local_destino' => $localDestino,
             'finalidade_emissao' => (int) ($focusConfig['nfe']['finalidade_emissao'] ?? 1),
             'consumidor_final' => (int) ($focusConfig['nfe']['consumidor_final'] ?? 1),
             'presenca_comprador' => (int) ($focusConfig['nfe']['presenca_comprador'] ?? 1),
@@ -93,7 +94,7 @@ class FocusDanfePreviewService
         ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
-    protected function buildItemPayload(SaleItem $saleItem, int $itemNumber, array $focusConfig): array
+    protected function buildItemPayload(SaleItem $saleItem, int $itemNumber, array $focusConfig, int $localDestino): array
     {
         /** @var Product|null $product */
         $product = $saleItem->product;
@@ -110,7 +111,10 @@ class FocusDanfePreviewService
                 ? (string) $saleItem->product->getKey()
                 : ($saleItem->product_code ?: (string) $saleItem->product_id),
             'descricao' => $saleItem->product_name,
-            'cfop' => (string) ($product?->cfop_code ?? ($focusConfig['nfe']['cfop_padrao'] ?? '5102')),
+            'cfop' => $this->resolveCfop(
+                (string) ($product?->cfop_code ?? ($focusConfig['nfe']['cfop_padrao'] ?? '5102')),
+                $localDestino,
+            ),
             'unidade_comercial' => $this->normalizeUnit((string) $saleItem->unit),
             'quantidade_comercial' => $this->formatDecimal((float) $saleItem->quantity, 3),
             'valor_unitario_comercial' => $this->formatDecimal((float) $saleItem->unit_price, 4),
@@ -244,6 +248,25 @@ class FocusDanfePreviewService
         }
 
         return strtoupper($ufEmitente) === strtoupper($ufDestinatario) ? 1 : 2;
+    }
+
+    protected function resolveCfop(string $cfop, int $localDestino): string
+    {
+        $cfop = $this->onlyDigits($cfop);
+
+        if (strlen($cfop) !== 4) {
+            return $cfop;
+        }
+
+        if ($localDestino === 2 && $cfop === '5102') {
+            return '6102';
+        }
+
+        if ($localDestino === 1 && $cfop === '6102') {
+            return '5102';
+        }
+
+        return $cfop;
     }
 
     protected function onlyDigits(string $value): string

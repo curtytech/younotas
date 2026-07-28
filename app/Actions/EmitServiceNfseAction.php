@@ -31,7 +31,9 @@ class EmitServiceNfseAction
 
             $config = $this->focusNfseService->configurationFor($locked);
             $reference = $locked->focus_nfse_ref ?: (string) Str::uuid();
-            $payload = $locked->focus_nfse_payload ?: $this->focusNfseService->buildPayload($locked, $config);
+            $payload = in_array($locked->focus_nfse_status, [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::TRANSPORT_ERROR], true)
+                ? $this->focusNfseService->buildPayload($locked, $config)
+                : ($locked->focus_nfse_payload ?: $this->focusNfseService->buildPayload($locked, $config));
 
             $locked->update([
                 'focus_nfse_ref' => $reference,

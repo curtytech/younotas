@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\FocusDanfePreviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -77,4 +78,13 @@ test('consulta e cancela uma NF-e autorizada', function (): void {
 
     app(CancelSaleNfeAction::class)->execute($this->sale, 'Cancelamento por erro de emissão.');
     expect($this->sale->refresh()->focus_nfe_status)->toBe('cancelado');
+});
+
+test('converte CFOP interno em interestadual para destinatário de outra UF', function (): void {
+    $this->sale->client->update(['state' => 'RJ']);
+
+    $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh());
+
+    expect($payload['local_destino'])->toBe(2)
+        ->and($payload['items'][0]['cfop'])->toBe('6102');
 });
