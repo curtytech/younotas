@@ -38,6 +38,7 @@ return [
     'focus_nfe' => [
         'api_key' => env('FOCUS_NFE_API_KEY'),
         'api_password' => env('FOCUS_NFE_API_PASSWORD', ''),
+        'webhook_secret' => env('FOCUS_NFE_WEBHOOK_SECRET'),
         'base_url' => env('FOCUS_NFE_BASE_URL', 'https://homologacao.focusnfe.com.br'),
         'prestador' => [
             'cnpj' => env('FOCUS_NFE_PRESTADOR_CNPJ'),
