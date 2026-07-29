@@ -3,11 +3,16 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\FiscalDocumentResource\Pages;
+use App\Jobs\CancelSaleNfeJob;
+use App\Jobs\CancelServiceNfseJob;
 use App\Jobs\ConsultSaleNfeJob;
 use App\Jobs\ConsultServiceNfseJob;
 use App\Jobs\EmitSaleNfeJob;
 use App\Jobs\EmitServiceNfseJob;
 use App\Models\FiscalDocument;
+use App\Support\NfeStatus;
+use App\Support\NfseStatus;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -144,12 +149,40 @@ class FiscalDocumentResource extends Resource
                         }
                     })
                     ->successNotificationTitle('Reenvio agendado'),
-                Tables\Actions\Action::make('abrir_documento')
-                    ->label('Abrir documento')
-                    ->icon('heroicon-o-arrow-top-right-on-square')
-                    ->url(fn (FiscalDocument $record): ?string => $record->document_url)
-                    ->openUrlInNewTab()
-                    ->visible(fn (FiscalDocument $record): bool => filled($record->document_url)),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('abrir_documento')
+                        ->label('Abrir Documento')
+                        ->icon('heroicon-o-arrow-top-right-on-square')
+                        ->url(fn (FiscalDocument $record): ?string => $record->document_url)
+                        ->openUrlInNewTab()
+                        ->visible(fn (FiscalDocument $record): bool => filled($record->document_url)),
+                    Tables\Actions\Action::make('cancelar_nota')
+                        ->label('Cancelar Nota')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(fn (FiscalDocument $record): bool => $record->document_type === 'NF-e'
+                            ? NfeStatus::canCancel($record->status)
+                            : NfseStatus::canCancel($record->status))
+                        ->requiresConfirmation()
+                        ->form([
+                            Textarea::make('justification')
+                                ->label('Justificativa do Cancelamento')
+                                ->required()
+                                ->minLength(15)
+                                ->maxLength(255)
+                                ->placeholder('Informe a justificativa do cancelamento.'),
+                        ])
+                        ->action(function (FiscalDocument $record, array $data): void {
+                            if ($record->document_type === 'NF-e') {
+                                CancelSaleNfeJob::dispatch((int) $record->source_id, $data['justification']);
+                            } else {
+                                CancelServiceNfseJob::dispatch((int) $record->source_id, $data['justification']);
+                            }
+                        })
+                        ->successNotificationTitle('Cancelamento da nota enfileirado.'),
+                ])
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->label('Ações'),
             ])
             ->defaultPaginationPageOption(25);
     }
