@@ -11,7 +11,7 @@ class FocusNfseWebhookEvent extends Model
     use HasFactory;
 
     protected $fillable = [
-        'service_id',
+        'service_order_id',
         'reference',
         'payload_hash',
         'payload',
@@ -26,8 +26,8 @@ class FocusNfseWebhookEvent extends Model
         ];
     }
 
-    public function service(): BelongsTo
+    public function serviceOrder(): BelongsTo
     {
-        return $this->belongsTo(Service::class);
+        return $this->belongsTo(ServiceOrder::class);
     }
 }

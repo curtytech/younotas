@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\CancelServiceNfseAction;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,12 +31,12 @@ class CancelServiceNfseJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(CancelServiceNfseAction $action): void
     {
-        $action->execute(Service::findOrFail($this->serviceId), $this->justification);
+        $action->execute(ServiceOrder::findOrFail($this->serviceId), $this->justification);
     }
 
     public function failed(Throwable $exception): void
     {
-        $service = Service::find($this->serviceId);
+        $service = ServiceOrder::find($this->serviceId);
 
         if ($service) {
             $service->update([

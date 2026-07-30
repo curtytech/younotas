@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\FocusNfseRequestException;
 use App\Models\Client;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Support\FiscalDocument;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -17,7 +17,7 @@ class FocusNfseService
         protected FocusNfeConfigService $focusNfeConfigService,
     ) {}
 
-    public function configurationFor(Service $service): array
+    public function configurationFor(ServiceOrder $service): array
     {
         $service->loadMissing('user.focusNfeSetting');
 
@@ -35,7 +35,7 @@ class FocusNfseService
         return $response->json();
     }
 
-    public function consult(Service $service): array
+    public function consult(ServiceOrder $service): array
     {
         $service->loadMissing('user.focusNfeSetting');
 
@@ -51,7 +51,7 @@ class FocusNfseService
         return $response->json();
     }
 
-    public function cancel(Service $service, string $justification): array
+    public function cancel(ServiceOrder $service, string $justification): array
     {
         if (blank($service->focus_nfse_ref)) {
             throw new RuntimeException('O serviço não possui uma referência de NFS-e para cancelar.');
@@ -73,15 +73,23 @@ class FocusNfseService
         return $response->json();
     }
 
-    public function buildPayload(Service $service, array $focusConfig): array
+    public function buildPayload(ServiceOrder $service, array $focusConfig): array
     {
-        $service->loadMissing('client');
+        $service->loadMissing('client', 'items');
         $this->guardRequiredConfiguration($focusConfig);
         $this->guardRequiredModelData($service);
 
         $client = $service->client;
         $prestadorMunicipio = $this->onlyDigits((string) data_get($focusConfig, 'prestador.codigo_municipio'));
-        $serviceValue = $this->decimalToFloat((string) $service->unit_price);
+        $serviceValue = $this->decimalToFloat((string) $service->total_amount);
+        $items = $service->items;
+        $firstItem = $items->first();
+        $description = $items->map(fn ($item): string => sprintf(
+            '%s x %s%s',
+            $item->quantity,
+            $item->service_name,
+            filled($item->description) ? ': '.$item->description : '',
+        ))->implode('; ');
 
         return [
             'data_emissao' => now('America/Sao_Paulo')->toIso8601String(),
@@ -111,19 +119,19 @@ class FocusNfseService
             'servico' => array_filter([
                 'valor_servicos' => $serviceValue,
                 'iss_retido' => false,
-                'item_lista_servico' => (string) ($service->lc116_code ?: $service->municipal_service_code),
-                'codigo_cnae' => filled($service->cnae_code) ? $this->onlyDigits($service->cnae_code) : null,
-                'codigo_tributacao_municipio' => $service->municipal_service_code,
-                'codigo_nbs' => $service->nbs_code,
-                'discriminacao' => $service->description ?: $service->name,
+                'item_lista_servico' => (string) ($firstItem?->lc116_code ?: $firstItem?->municipal_service_code),
+                'codigo_cnae' => filled($firstItem?->cnae_code) ? $this->onlyDigits($firstItem->cnae_code) : null,
+                'codigo_tributacao_municipio' => $firstItem?->municipal_service_code,
+                'codigo_nbs' => $firstItem?->nbs_code,
+                'discriminacao' => $description ?: 'Serviços da Ordem '.$service->number,
                 'codigo_municipio' => $prestadorMunicipio,
-                'aliquota' => $this->nullableDecimal($service->iss_aliquot),
-                'valor_iss' => $this->taxValue($service->unit_price, $service->iss_aliquot),
-                'valor_pis' => $this->taxValue($service->unit_price, $service->pis_aliquot),
-                'valor_cofins' => $this->taxValue($service->unit_price, $service->cofins_aliquot),
-                'valor_inss' => $this->taxValue($service->unit_price, $service->inss_aliquot),
-                'valor_ir' => $this->taxValue($service->unit_price, $service->ir_aliquot),
-                'valor_csll' => $this->taxValue($service->unit_price, $service->csll_aliquot),
+                'aliquota' => $this->nullableDecimal($firstItem?->iss_aliquot),
+                'valor_iss' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->iss_aliquot) ?: 0)),
+                'valor_pis' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->pis_aliquot) ?: 0)),
+                'valor_cofins' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->cofins_aliquot) ?: 0)),
+                'valor_inss' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->inss_aliquot) ?: 0)),
+                'valor_ir' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->ir_aliquot) ?: 0)),
+                'valor_csll' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->csll_aliquot) ?: 0)),
             ], static fn (mixed $value): bool => $value !== null && $value !== ''),
         ] + (filled(data_get($focusConfig, 'nfse.regime_especial_tributacao'))
             ? ['regime_especial_tributacao' => (string) data_get($focusConfig, 'nfse.regime_especial_tributacao')]
@@ -185,19 +193,28 @@ class FocusNfseService
         }
     }
 
-    protected function guardRequiredModelData(Service $service): void
+    protected function guardRequiredModelData(ServiceOrder $service): void
     {
         $client = $service->client;
         if (! $client || $client->user_id !== $service->user_id) {
             throw new RuntimeException('O serviço deve estar vinculado a um cliente do mesmo emissor.');
         }
 
-        if (! $service->is_active || ! $client->is_active) {
-            throw new RuntimeException('O serviço e o cliente devem estar ativos para emitir NFS-e.');
+        if (! $client->is_active) {
+            throw new RuntimeException('O cliente deve estar ativo para emitir NFS-e.');
         }
 
-        if ((float) $service->unit_price <= 0 || blank($service->lc116_code) && blank($service->municipal_service_code)) {
-            throw new RuntimeException('Informe valor unitário maior que zero e o código LC 116 ou municipal do serviço.');
+        if ((float) $service->total_amount <= 0 || $service->items->isEmpty()) {
+            throw new RuntimeException('A O.S. deve possuir itens e total maior que zero.');
+        }
+
+        if ($service->items->contains(fn ($item): bool => blank($item->lc116_code) && blank($item->municipal_service_code))) {
+            throw new RuntimeException('Cada item da O.S. deve possuir código LC 116 ou código municipal.');
+        }
+
+        if ($service->items->pluck('lc116_code')->filter()->unique()->count() > 1
+            || $service->items->pluck('municipal_service_code')->filter()->unique()->count() > 1) {
+            throw new RuntimeException('Todos os itens da O.S. devem usar o mesmo código de serviço para emissão da NFS-e.');
         }
 
         if (! $this->clientDocumentIsValid($client)) {
@@ -212,9 +229,11 @@ class FocusNfseService
             throw new RuntimeException('O CEP do cliente deve conter 8 dígitos.');
         }
 
-        foreach (['iss_aliquot', 'pis_aliquot', 'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot'] as $field) {
-            if ((float) $service->{$field} < 0 || (float) $service->{$field} > 100) {
-                throw new RuntimeException("A alíquota {$field} deve estar entre 0 e 100.");
+        foreach ($service->items as $item) {
+            foreach (['iss_aliquot', 'pis_aliquot', 'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot'] as $field) {
+                if ((float) $item->{$field} < 0 || (float) $item->{$field} > 100) {
+                    throw new RuntimeException("A alíquota {$field} deve estar entre 0 e 100.");
+                }
             }
         }
     }

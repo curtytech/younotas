@@ -83,6 +83,16 @@ class User extends Authenticatable
         return $this->hasMany(Service::class);
     }
 
+    public function technicians(): HasMany
+    {
+        return $this->hasMany(Technician::class);
+    }
+
+    public function serviceOrders(): HasMany
+    {
+        return $this->hasMany(ServiceOrder::class);
+    }
+
     public function stockMovements(): HasMany
     {
         return $this->hasMany(StockMovement::class);

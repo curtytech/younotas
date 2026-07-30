@@ -7,7 +7,8 @@ use App\Actions\HandleFocusNfseWebhookAction;
 use App\Jobs\ReconcileFocusNfseWebhooksJob;
 use App\Models\Client;
 use App\Models\FocusNfseWebhookEvent;
-use App\Models\Service;
+use App\Models\ServiceOrder;
+use App\Models\ServiceOrderItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -60,19 +61,26 @@ beforeEach(function (): void {
         'is_active' => true,
     ]);
 
-    $this->service = Service::create([
+    $this->service = ServiceOrder::create([
         'user_id' => $this->user->id,
         'client_id' => $this->client->id,
-        'code' => 'SERV-001',
-        'name' => 'Serviço de Desenvolvimento de Software',
+        'number' => 'OS-000001',
+        'status' => 'completed',
+        'total_amount' => 1500.00,
+    ]);
+
+    $this->service->items()->create([
+        'service_name' => 'Serviço de Desenvolvimento de Software',
+        'service_code' => 'SERV-001',
         'description' => 'Desenvolvimento web customizado',
         'unit' => 'UN',
+        'quantity' => 1,
         'unit_price' => 1500.00,
+        'total_amount' => 1500.00,
         'lc116_code' => '0107',
         'municipal_service_code' => '0107',
         'cnae_code' => '6201501',
         'iss_aliquot' => 5.00,
-        'is_active' => true,
     ]);
 });
 

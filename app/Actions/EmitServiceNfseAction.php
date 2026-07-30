@@ -4,7 +4,7 @@ namespace App\Actions;
 
 use App\Exceptions\FocusNfseRequestException;
 use App\Jobs\ReconcileFocusNfseWebhooksJob;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Services\FocusNfseService;
 use App\Support\NfseStatus;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,10 +20,10 @@ class EmitServiceNfseAction
         protected ConsultServiceNfseAction $consultServiceNfseAction,
     ) {}
 
-    public function execute(Service $service): array
+    public function execute(ServiceOrder $service): array
     {
         [$prepared, $reference, $payload, $config] = DB::transaction(function () use ($service): array {
-            $locked = Service::query()->lockForUpdate()->findOrFail($service->id);
+            $locked = ServiceOrder::query()->with('items')->lockForUpdate()->findOrFail($service->id);
 
             if (! NfseStatus::canEmit($locked->focus_nfse_status)) {
                 throw new RuntimeException('A NFS-e não pode ser emitida no estado atual: '.$locked->focus_nfse_status.'.');
@@ -54,7 +54,7 @@ class EmitServiceNfseAction
         } catch (Throwable $exception) {
             if ($this->mayHaveBeenProcessed($exception)) {
                 try {
-                    return $this->consultServiceNfseAction->execute(Service::findOrFail($prepared->id));
+                    return $this->consultServiceNfseAction->execute(ServiceOrder::findOrFail($prepared->id));
                 } catch (Throwable) {
                     // A consulta pode retornar 404 enquanto a Focus ainda processa a primeira tentativa.
                 }
@@ -78,7 +78,7 @@ class EmitServiceNfseAction
 
     protected function recordFailure(int $serviceId, string $reference, Throwable $exception): void
     {
-        $service = Service::query()->whereKey($serviceId)->where('focus_nfse_ref', $reference)->first();
+        $service = ServiceOrder::query()->whereKey($serviceId)->where('focus_nfse_ref', $reference)->first();
 
         if (! $service) {
             return;
@@ -98,7 +98,7 @@ class EmitServiceNfseAction
 
     protected function persistResponse(int $serviceId, string $reference, array $response): void
     {
-        $service = Service::query()->whereKey($serviceId)->where('focus_nfse_ref', $reference)->firstOrFail();
+        $service = ServiceOrder::query()->whereKey($serviceId)->where('focus_nfse_ref', $reference)->firstOrFail();
         $status = NfseStatus::normalize($response['status'] ?? NfseStatus::PROCESSING);
 
         $service->update([
@@ -111,5 +111,9 @@ class EmitServiceNfseAction
                 ? ['operation' => 'emissao', 'response' => $response, 'at' => now()->toIso8601String()]
                 : null,
         ]);
+
+        if ($status === NfseStatus::AUTHORIZED) {
+            $service->update(['status' => 'billed']);
+        }
     }
 }

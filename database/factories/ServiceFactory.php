@@ -2,7 +2,6 @@
 
 namespace Database\Factories;
 
-use App\Models\Client;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -16,7 +15,6 @@ class ServiceFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'client_id' => Client::factory(),
             'code' => 'SERVICO-TESTE',
             'name' => 'Desenvolvimento de software',
             'description' => 'Serviço criado para teste de emissão de NFS-e.',
