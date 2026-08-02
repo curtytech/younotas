@@ -4,9 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\FocusNfeRequestException;
 use App\Models\Sale;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class FocusNfeService
@@ -14,6 +12,7 @@ class FocusNfeService
     public function __construct(
         protected FocusNfeConfigService $configService,
         protected FocusDanfePreviewService $payloadService,
+        protected FocusApiClient $apiClient,
     ) {}
 
     public function configurationFor(Sale $sale): array
@@ -30,7 +29,7 @@ class FocusNfeService
 
     public function emit(array $config, string $reference, array $payload): array
     {
-        $response = $this->client($config)->asJson()->post('/v2/nfe?ref='.urlencode($reference), $payload);
+        $response = $this->apiClient->post($config, '/v2/nfe', $payload, ['ref' => $reference]);
         $this->throwForFailure($response);
 
         return $response->json() ?? [];
@@ -42,8 +41,10 @@ class FocusNfeService
             throw new RuntimeException('A venda não possui uma referência de NF-e para consultar.');
         }
 
-        $response = $this->client($this->configurationFor($sale))
-            ->get('/v2/nfe/'.urlencode($sale->focus_nfe_ref));
+        $response = $this->apiClient->get(
+            $this->configurationFor($sale),
+            '/v2/nfe/'.urlencode($sale->focus_nfe_ref),
+        );
         $this->throwForFailure($response);
 
         return $response->json() ?? [];
@@ -60,22 +61,14 @@ class FocusNfeService
             throw new RuntimeException('A justificativa deve ter entre 15 e 255 caracteres.');
         }
 
-        $response = $this->client($this->configurationFor($sale))
-            ->asJson()->delete('/v2/nfe/'.urlencode($sale->focus_nfe_ref), ['justificativa' => $justification]);
+        $response = $this->apiClient->delete(
+            $this->configurationFor($sale),
+            '/v2/nfe/'.urlencode($sale->focus_nfe_ref),
+            ['justificativa' => $justification],
+        );
         $this->throwForFailure($response);
 
         return $response->json() ?? [];
-    }
-
-    protected function client(array $config): PendingRequest
-    {
-        if (blank($config['api_key'] ?? null)) {
-            throw new RuntimeException('Configure a API Key da Focus na Configuração Fiscal.');
-        }
-
-        return Http::baseUrl(rtrim((string) ($config['base_url'] ?? config('services.focus_nfe.base_url')), '/'))
-            ->withBasicAuth((string) $config['api_key'], (string) ($config['api_password'] ?? ''))
-            ->acceptJson()->connectTimeout(5)->timeout(30);
     }
 
     protected function throwForFailure(Response $response): void

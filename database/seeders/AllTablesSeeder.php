@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\Client;
 use App\Models\Appeal;
 use App\Models\AppealStatus;
+use App\Models\Client;
 use App\Models\Driver;
 use App\Models\Fine;
 use App\Models\FocusNfeWebhookEvent;
@@ -12,11 +12,11 @@ use App\Models\FocusNfseWebhookEvent;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Models\ServiceOrderAttachment;
 use App\Models\ServiceOrderItem;
 use App\Models\StockMovement;
-use App\Models\Service;
-use App\Models\ServiceOrder;
 use App\Models\Technician;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -47,7 +47,7 @@ class AllTablesSeeder extends Seeder
         Technician::firstOrCreate(['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'], Technician::factory()->make(['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'])->toArray());
         $sale = Sale::firstOrCreate(['user_id' => $user->id, 'number' => 'SALE-SEED-000001'], Sale::factory()->make(['user_id' => $user->id, 'client_id' => $client->id, 'number' => 'SALE-SEED-000001'])->toArray());
         SaleItem::firstOrCreate(['sale_id' => $sale->id, 'product_id' => $product->id], SaleItem::factory()->make(['sale_id' => $sale->id, 'product_id' => $product->id, 'product_name' => $product->name, 'product_code' => (string) $product->id])->toArray());
-        StockMovement::firstOrCreate(['user_id' => $user->id, 'product_id' => $product->id, 'reference' => 'STOCK-SEED-001'], StockMovement::factory()->make(['user_id' => $user->id, 'product_id' => $product->id])->toArray());
+        StockMovement::firstOrCreate(['user_id' => $user->id, 'product_id' => $product->id, 'reference' => 'STOCK-SEED-001'], StockMovement::factory()->make(['user_id' => $user->id, 'product_id' => $product->id, 'reference' => 'STOCK-SEED-001'])->toArray());
         $order = ServiceOrder::firstOrCreate(['user_id' => $user->id, 'number' => 'OS-SEED-000001'], ['client_id' => $client->id, 'status' => 'draft']);
         if (! $order->items()->exists()) {
             ServiceOrderItem::create(['service_order_id' => $order->id, 'service_id' => $service->id, 'service_name' => $service->name, 'service_code' => $service->code, 'description' => $service->description, 'municipal_service_code' => $service->municipal_service_code, 'lc116_code' => $service->lc116_code, 'unit' => $service->unit, 'quantity' => 1, 'unit_price' => $service->unit_price, 'total_amount' => $service->unit_price, 'iss_aliquot' => $service->iss_aliquot]);

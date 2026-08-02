@@ -7,7 +7,6 @@ use App\Models\Client;
 use App\Models\ServiceOrder;
 use App\Support\FiscalDocument;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -15,6 +14,7 @@ class FocusNfseService
 {
     public function __construct(
         protected FocusNfeConfigService $focusNfeConfigService,
+        protected FocusApiClient $apiClient,
     ) {}
 
     public function configurationFor(ServiceOrder $service): array
@@ -26,9 +26,7 @@ class FocusNfseService
 
     public function emit(array $focusConfig, string $reference, array $payload): array
     {
-        $response = $this->client($focusConfig)
-            ->asJson()
-            ->post('/v2/nfse?ref='.urlencode($reference), $payload);
+        $response = $this->apiClient->post($focusConfig, '/v2/nfse', $payload, ['ref' => $reference]);
 
         $this->throwForFailure($response);
 
@@ -43,8 +41,10 @@ class FocusNfseService
             throw new RuntimeException('O serviço não possui uma referência de NFS-e para consultar.');
         }
 
-        $response = $this->client($this->configurationFor($service))
-            ->get('/v2/nfse/'.urlencode($service->focus_nfse_ref));
+        $response = $this->apiClient->get(
+            $this->configurationFor($service),
+            '/v2/nfse/'.urlencode($service->focus_nfse_ref),
+        );
 
         $this->throwForFailure($response);
 
@@ -62,11 +62,11 @@ class FocusNfseService
             throw new RuntimeException('A justificativa do cancelamento deve ter entre 15 e 255 caracteres.');
         }
 
-        $response = $this->client($this->configurationFor($service))
-            ->asJson()
-            ->delete('/v2/nfse/'.urlencode($service->focus_nfse_ref), [
-                'justificativa' => $justification,
-            ]);
+        $response = $this->apiClient->delete(
+            $this->configurationFor($service),
+            '/v2/nfse/'.urlencode($service->focus_nfse_ref),
+            ['justificativa' => $justification],
+        );
 
         $this->throwForFailure($response);
 
@@ -136,15 +136,6 @@ class FocusNfseService
         ] + (filled(data_get($focusConfig, 'nfse.regime_especial_tributacao'))
             ? ['regime_especial_tributacao' => (string) data_get($focusConfig, 'nfse.regime_especial_tributacao')]
             : []);
-    }
-
-    protected function client(array $focusConfig)
-    {
-        return Http::baseUrl(rtrim((string) data_get($focusConfig, 'base_url', config('services.focus_nfe.base_url')), '/'))
-            ->withBasicAuth((string) data_get($focusConfig, 'api_key'), '')
-            ->acceptJson()
-            ->connectTimeout(5)
-            ->timeout(20);
     }
 
     protected function throwForFailure($response): void

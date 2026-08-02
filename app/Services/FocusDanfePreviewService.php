@@ -7,15 +7,14 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class FocusDanfePreviewService
 {
     public function __construct(
         protected FocusNfeConfigService $focusNfeConfigService,
+        protected FocusApiClient $apiClient,
     ) {}
 
     public function generate(Sale $sale): Response
@@ -25,24 +24,14 @@ class FocusDanfePreviewService
         $focusConfig = $this->focusNfeConfigService->forUser($sale->user);
         $payload = $this->buildPayload($sale);
 
-        $response = Http::baseUrl(rtrim((string) ($focusConfig['base_url'] ?? config('services.focus_nfe.base_url')), '/'))
-            ->withBasicAuth(
-                (string) ($focusConfig['api_key'] ?? config('services.focus_nfe.api_key')),
-                (string) ($focusConfig['api_password'] ?? config('services.focus_nfe.api_password', '')),
-            )
-            ->accept('application/pdf')
-            ->asJson()
-            ->post('/v2/nfe/danfe', $payload);
+        $response = $this->apiClient->post($focusConfig, '/v2/nfe/danfe', $payload, [], 'application/pdf');
 
-        try {
-            $response->throw();
-        } catch (RequestException $exception) {
+        if ($response->failed()) {
             throw new RuntimeException(
                 $response->json('mensagem')
                     ?? $response->json('message')
                     ?? $response->json('erros.0.mensagem')
-                    ?? $exception->getMessage(),
-                previous: $exception,
+                    ?? 'Falha ao gerar pré-visualização da DANFe ('.$response->status().').'
             );
         }
 
