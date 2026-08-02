@@ -6,6 +6,7 @@ use App\Filament\Resources\ServiceOrderResource\Pages;
 use App\Jobs\CancelServiceNfseJob;
 use App\Jobs\ConsultServiceNfseJob;
 use App\Jobs\EmitServiceNfseJob;
+use App\Models\Client;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\Technician;
@@ -21,11 +22,17 @@ use Illuminate\Database\Eloquent\Builder;
 class ServiceOrderResource extends Resource
 {
     protected static ?string $model = ServiceOrder::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+
     protected static ?string $modelLabel = 'Ordem de Serviço';
+
     protected static ?string $pluralModelLabel = 'Ordens de Serviço';
+
     protected static ?string $navigationLabel = 'Ordens de Serviço';
+
     protected static ?string $navigationGroup = 'Operações';
+
     protected static ?int $navigationSort = 10;
 
     public static function getEloquentQuery(): Builder
@@ -37,14 +44,25 @@ class ServiceOrderResource extends Resource
     {
         return $form->schema([
             auth()->user()->role === 'admin' ? Forms\Components\Select::make('user_id')->relationship('user', 'name')->required()->default(auth()->id())->label('Emissor') : Forms\Components\Hidden::make('user_id')->default(auth()->id()),
-            Forms\Components\Select::make('client_id')->relationship('client', 'name', fn (Builder $q) => $q->when(auth()->user()->role !== 'admin', fn (Builder $q) => $q->where('user_id', auth()->id())))->searchable()->preload()->required()->label('Cliente'),
+            Forms\Components\Select::make('client_id')->options(fn (): array => Client::query()->when(auth()->user()->role !== 'admin', fn (Builder $q) => $q->where('user_id', auth()->id()))->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->native(false)->required()->label('Cliente'),
             Forms\Components\Select::make('technician_id')->options(fn (Get $get): array => Technician::query()->where('user_id', $get('user_id') ?: auth()->id())->where('is_active', true)->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->label('Técnico'),
             Forms\Components\Select::make('status')->options(['draft' => 'Rascunho', 'scheduled' => 'Agendada', 'in_progress' => 'Em execução', 'completed' => 'Concluída', 'billed' => 'Faturada', 'canceled' => 'Cancelada'])->default('draft')->required()->label('Status'),
             Forms\Components\DateTimePicker::make('scheduled_for')->label('Agendamento'),
             Forms\Components\Textarea::make('problem_description')->label('Problema/solicitação'),
             Forms\Components\Textarea::make('execution_description')->label('Descrição da execução'),
             Forms\Components\Repeater::make('items')->relationship()->minItems(1)->defaultItems(1)->live()->schema([
-                Forms\Components\Select::make('service_id')->options(fn (Get $get): array => Service::query()->where('user_id', $get('../../user_id') ?: auth()->id())->where('is_active', true)->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->required()->live()->afterStateUpdated(function ($state, callable $set): void { if ($service = Service::find($state)) { $set('service_name', $service->name); $set('service_code', $service->code); $set('description', $service->description); $set('unit', $service->unit); $set('unit_price', $service->unit_price); foreach (['municipal_service_code', 'lc116_code', 'cnae_code', 'nbs_code', 'iss_aliquot', 'pis_aliquot', 'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot'] as $field) $set($field, $service->{$field}); } })->label('Serviço'),
+                Forms\Components\Select::make('service_id')->options(fn (Get $get): array => Service::query()->where('user_id', $get('../../user_id') ?: auth()->id())->where('is_active', true)->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->required()->live()->afterStateUpdated(function ($state, callable $set): void {
+                    if ($service = Service::find($state)) {
+                        $set('service_name', $service->name);
+                        $set('service_code', $service->code);
+                        $set('description', $service->description);
+                        $set('unit', $service->unit);
+                        $set('unit_price', $service->unit_price);
+                        foreach (['municipal_service_code', 'lc116_code', 'cnae_code', 'nbs_code', 'iss_aliquot', 'pis_aliquot', 'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot'] as $field) {
+                            $set($field, $service->{$field});
+                        }
+                    }
+                })->label('Serviço'),
                 Forms\Components\Hidden::make('service_name'), Forms\Components\Hidden::make('service_code'), Forms\Components\Hidden::make('description'), Forms\Components\Hidden::make('municipal_service_code'), Forms\Components\Hidden::make('lc116_code'), Forms\Components\Hidden::make('cnae_code'), Forms\Components\Hidden::make('nbs_code'), Forms\Components\Hidden::make('unit'),
                 Forms\Components\TextInput::make('quantity')->numeric()->required()->default(1)->minValue(.001)->label('Quantidade'),
                 Forms\Components\TextInput::make('unit_price')->numeric()->required()->minValue(0)->label('Valor unitário'),
