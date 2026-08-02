@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Resources\TechnicianResource\Pages\CreateTechnician;
+use App\Filament\Resources\TechnicianResource\Pages\EditTechnician;
+use App\Filament\Resources\TechnicianResource\Pages\ListTechnicians;
 use App\Models\Technician;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -9,14 +12,20 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class TechnicianResource extends Resource
 {
     protected static ?string $model = Technician::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
+
     protected static ?string $modelLabel = 'Técnico';
+
     protected static ?string $pluralModelLabel = 'Técnicos';
+
     protected static ?string $navigationLabel = 'Técnicos';
+
     protected static ?string $navigationGroup = 'Operações';
 
     public static function getEloquentQuery(): Builder
@@ -46,8 +55,23 @@ class TechnicianResource extends Resource
         ])->actions([Tables\Actions\EditAction::make(), Tables\Actions\DeleteAction::make()]);
     }
 
+    public static function canCreate(): bool
+    {
+        return auth()->check();
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+    }
+
     public static function getPages(): array
     {
-        return ['index' => \App\Filament\Resources\TechnicianResource\Pages\ListTechnicians::route('/'), 'create' => \App\Filament\Resources\TechnicianResource\Pages\CreateTechnician::route('/create'), 'edit' => \App\Filament\Resources\TechnicianResource\Pages\EditTechnician::route('/{record}/edit')];
+        return ['index' => ListTechnicians::route('/'), 'create' => CreateTechnician::route('/create'), 'edit' => EditTechnician::route('/{record}/edit')];
     }
 }
