@@ -10,6 +10,8 @@ use App\Jobs\ConsultServiceNfseJob;
 use App\Jobs\EmitSaleNfeJob;
 use App\Jobs\EmitServiceNfseJob;
 use App\Models\FiscalDocument;
+use App\Models\Sale;
+use App\Models\ServiceOrder;
 use App\Support\NfeStatus;
 use App\Support\NfseStatus;
 use Filament\Forms\Components\Textarea;
@@ -56,7 +58,7 @@ class FiscalDocumentResource extends Resource
     {
         return $table
             ->poll('10s')
-            ->defaultSort('last_sent_at', 'desc')
+            ->defaultSort('issued_at', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('document_type')
                     ->badge()
@@ -64,6 +66,7 @@ class FiscalDocumentResource extends Resource
                     ->label('Tipo'),
                 Tables\Columns\TextColumn::make('source_label')
                     ->searchable()
+                    ->placeholder('—')
                     ->label('Origem'),
                 Tables\Columns\TextColumn::make('issued_at')
                     ->date('d/m/Y')
@@ -90,10 +93,31 @@ class FiscalDocumentResource extends Resource
                 Tables\Columns\TextColumn::make('document_number')
                     ->placeholder('—')
                     ->label('Número'),
-                Tables\Columns\TextColumn::make('reference')
+                Tables\Columns\TextColumn::make('series')
+                    ->placeholder('—')
+                    ->label('Série'),
+                Tables\Columns\TextColumn::make('total_amount')
+                    ->money('BRL')
+                    ->placeholder('—')
+                    ->label('Total'),
+                Tables\Columns\TextColumn::make('focus_reference')
                     ->copyable()
                     ->copyMessage('Referência copiada')
+                    ->placeholder('—')
                     ->label('Referência Focus'),
+                Tables\Columns\TextColumn::make('metadata.origin')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'emitted' => 'Emitida',
+                        'focus_backup' => 'Backup Focus',
+                        'focus_individual' => 'Importada',
+                        'xml_upload' => 'XML',
+                        'manual' => 'Manual',
+                        default => '—',
+                    })
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->label('Origem'),
                 Tables\Columns\TextColumn::make('last_checked_at')
                     ->dateTime('d/m/Y H:i:s')
                     ->placeholder('—')
@@ -124,13 +148,9 @@ class FiscalDocumentResource extends Resource
                     ->label('Consultar')
                     ->icon('heroicon-o-arrow-path')
                     ->color('info')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['processando', 'enviando'], true))
+                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['processando', 'enviando'], true) && $record->isLinked())
                     ->action(function (FiscalDocument $record): void {
-                        if ($record->document_type === 'NF-e') {
-                            ConsultSaleNfeJob::dispatch((int) $record->source_id);
-                        } else {
-                            ConsultServiceNfseJob::dispatch((int) $record->source_id);
-                        }
+                        self::dispatchForSource($record, 'consult');
                     })
                     ->successNotificationTitle('Consulta agendada'),
                 Tables\Actions\Action::make('reenviar')
@@ -140,13 +160,9 @@ class FiscalDocumentResource extends Resource
                     ->requiresConfirmation()
                     ->modalHeading('Reenviar documento fiscal?')
                     ->modalDescription('O payload será reconstruído com a configuração atual antes do envio.')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true))
+                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true) && $record->isLinked())
                     ->action(function (FiscalDocument $record): void {
-                        if ($record->document_type === 'NF-e') {
-                            EmitSaleNfeJob::dispatch((int) $record->source_id);
-                        } else {
-                            EmitServiceNfseJob::dispatch((int) $record->source_id);
-                        }
+                        self::dispatchForSource($record, 'emit');
                     })
                     ->successNotificationTitle('Reenvio agendado'),
                 Tables\Actions\ActionGroup::make([
@@ -160,9 +176,9 @@ class FiscalDocumentResource extends Resource
                         ->label('Cancelar Nota')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (FiscalDocument $record): bool => $record->document_type === 'NF-e'
+                        ->visible(fn (FiscalDocument $record): bool => $record->isLinked() && ($record->document_type === 'NF-e'
                             ? NfeStatus::canCancel($record->status)
-                            : NfseStatus::canCancel($record->status))
+                            : NfseStatus::canCancel($record->status)))
                         ->requiresConfirmation()
                         ->form([
                             Textarea::make('justification')
@@ -173,11 +189,7 @@ class FiscalDocumentResource extends Resource
                                 ->placeholder('Informe a justificativa do cancelamento.'),
                         ])
                         ->action(function (FiscalDocument $record, array $data): void {
-                            if ($record->document_type === 'NF-e') {
-                                CancelSaleNfeJob::dispatch((int) $record->source_id, $data['justification']);
-                            } else {
-                                CancelServiceNfseJob::dispatch((int) $record->source_id, $data['justification']);
-                            }
+                            self::dispatchForSource($record, 'cancel', $data['justification']);
                         })
                         ->successNotificationTitle('Cancelamento da nota enfileirado.'),
                 ])
@@ -185,6 +197,27 @@ class FiscalDocumentResource extends Resource
                     ->label('Ações'),
             ])
             ->defaultPaginationPageOption(25);
+    }
+
+    private static function dispatchForSource(FiscalDocument $record, string $operation, ?string $justification = null): void
+    {
+        if ($record->source_type === Sale::class) {
+            match ($operation) {
+                'consult' => ConsultSaleNfeJob::dispatch((int) $record->source_id),
+                'emit' => EmitSaleNfeJob::dispatch((int) $record->source_id),
+                'cancel' => CancelSaleNfeJob::dispatch((int) $record->source_id, $justification),
+            };
+
+            return;
+        }
+
+        if ($record->source_type === ServiceOrder::class) {
+            match ($operation) {
+                'consult' => ConsultServiceNfseJob::dispatch((int) $record->source_id),
+                'emit' => EmitServiceNfseJob::dispatch((int) $record->source_id),
+                'cancel' => CancelServiceNfseJob::dispatch((int) $record->source_id, $justification),
+            };
+        }
     }
 
     public static function getPages(): array

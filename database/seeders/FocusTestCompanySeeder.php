@@ -28,12 +28,19 @@ class FocusTestCompanySeeder extends Seeder
             'zip_code' => '25901-094',
         ])->save();
 
+        $apiKey = (string) config('services.focus_nfe.api_key');
+
+        if (blank($apiKey)) {
+            logger()->warning('FOCUS_NFE_API_KEY não configurada; usando chave fictícia no seeder.');
+            $apiKey = 'FOCUS_API_KEY_NAO_CONFIGURADA';
+        }
+
         FocusNfeSetting::updateOrCreate(
             ['user_id' => $user->id],
             ['settings' => [
-                'api_key' => 'iva6c50492xVe5wzO7LGdPz6oLyaybHC',
-                'api_password' => '',
-                'base_url' => 'https://homologacao.focusnfe.com.br',
+                'api_key' => $apiKey,
+                'api_password' => (string) config('services.focus_nfe.api_password', ''),
+                'base_url' => (string) config('services.focus_nfe.base_url', 'https://homologacao.focusnfe.com.br'),
                 'prestador' => [
                     'cnpj' => '28480405000193',
                     'inscricao_municipal' => '1005235',

@@ -40,6 +40,13 @@ return [
         'api_password' => env('FOCUS_NFE_API_PASSWORD', ''),
         'webhook_secret' => env('FOCUS_NFE_WEBHOOK_SECRET'),
         'base_url' => env('FOCUS_NFE_BASE_URL', 'https://homologacao.focusnfe.com.br'),
+        'rate_limit' => [
+            'max_attempts' => (int) env('FOCUS_NFE_RATE_LIMIT_MAX_ATTEMPTS', 300),
+            'decay_seconds' => (int) env('FOCUS_NFE_RATE_LIMIT_DECAY_SECONDS', 60),
+        ],
+        'retries' => [
+            'attempts' => (int) env('FOCUS_NFE_RETRIES', 1),
+        ],
         'prestador' => [
             'cnpj' => env('FOCUS_NFE_PRESTADOR_CNPJ'),
             'inscricao_municipal' => env('FOCUS_NFE_PRESTADOR_INSCRICAO_MUNICIPAL'),

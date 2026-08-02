@@ -38,35 +38,35 @@
 
 As páginas oficiais consultadas não publicam um número universal de requisições por minuto. A própria introdução da documentação alerta que resolver o acompanhamento apenas com vários `GET` em sequência aumenta o tráfego e pode atingir limites. Portanto, a integração deve tratar limites como uma restrição real mesmo sem um valor fixo documentado.
 
-### Restrições da integração atual
+### Cliente centralizado
 
-- `FocusNfeService` e `FocusNfseService` fazem chamadas HTTP diretamente.
+Todas as chamadas de saída para a Focus devem passar por `App\Services\FocusApiClient` (`get`, `post`, `delete`, `download`). Ele centraliza:
+
+- autenticação HTTP Basic, timeout e `Accept: application/json`;
+- rate limit por token/empresa, ambiente e operação, via `RateLimiter` (Redis em produção);
+- retry configurável de respostas `429` (respeitando `Retry-After`), `408` e `5xx`, com backoff;
+- chave de rate limit derivada do host do `base_url`, do hash do token e do segmento da rota (`nfe`, `nfse`, `backups`).
+
+`FocusNfeService`, `FocusNfseService`, `FocusDanfePreviewService`, `FocusNfeBackupService` e `FocusNfseImportService` usam o cliente. Não adicionar `Http::get/post/delete` diretos para a Focus fora dele.
+
+Configuração via env:
+
+- `FOCUS_NFE_RATE_LIMIT_MAX_ATTEMPTS` (padrão 300) e `FOCUS_NFE_RATE_LIMIT_DECAY_SECONDS` (padrão 60);
+- `FOCUS_NFE_RETRIES` (padrão 1; os retries de longo prazo continuam a cargo dos jobs).
+
+### Situação atual e restrições remanescentes
+
 - Jobs de consulta possuem `ShouldBeUnique`, `WithoutOverlapping`, retries e atrasos, mas esses controles são por venda/O.S., não por token Focus, empresa ou endpoint.
-- Não existe um limitador global de concorrência ou de taxa para chamadas de emissão, consulta, cancelamento, backup ou reenvio.
-- Não há tratamento específico para HTTP 429, `Retry-After` ou janela de rate limit.
+- O rate limit por token/operação do cliente é a proteção primária contra rajadas. Ainda não há limite de concorrência por token, circuit breaker, métricas de chamadas nem fila própria com prioridade.
 - O scheduler pode despachar até 100 consultas de NF-e pendentes a cada cinco minutos; somado a consultas iniciadas por emissão, ações manuais e múltiplas empresas, isso pode gerar rajadas acima do limite contratado.
-- A importação de backups, quando implementada, também poderá criar muitas requisições e downloads sem uma política de pacing.
-
-Conclusão: atualmente o sistema não garante que respeitará os limites da Focus.
+- A importação de backups enfileira um job por usuário/mês; cada job processa o ZIP localmente após um único download.
 
 ### Requisitos para novas chamadas
 
-Centralizar todas as chamadas Focus em um cliente/gateway com:
+1. Toda chamada nova deve usar `FocusApiClient`.
+2. Definir timeout, política de retry, classificação de erro e impacto no rate limit.
+3. Testar 2xx, 4xx, 401, 404, 422, 429, 5xx, timeout e resposta inválida.
+4. Manter tokens por empresa/ambiente e nunca usar um token de homologação em produção.
+5. Não registrar API key/token, payload fiscal completo ou XML em logs.
 
-1. Rate limit compartilhado por token/empresa, ambiente e operação, usando Redis em produção.
-2. Limite de concorrência por token para impedir várias requisições simultâneas desnecessárias.
-3. Fila própria para operações Focus, com prioridade para emissão/cancelamento e prioridade menor para polling/importação.
-4. Backoff exponencial com jitter para falhas transitórias.
-5. Tratamento explícito de `429`, respeitando `Retry-After` quando enviado.
-6. Circuit breaker ou pausa temporária quando houver sequência de respostas de limite/indisponibilidade.
-7. Deduplicação por empresa, referência e operação, evitando consultas concorrentes ao mesmo documento.
-8. Polling adaptativo: espaçar consultas enquanto estiver processando e interromper imediatamente ao receber estado final via webhook.
-9. Limite de lote e espaçamento entre downloads/importações de backup.
-10. Métricas de chamadas por token, endpoint, status HTTP, latência, retries e respostas 429.
-
-Os limites numéricos devem ser configuráveis por ambiente e ajustados com base na resposta formal da Focus ou no contrato da conta. Não fixar um valor presumido no código sem confirmação da Focus.
-- Preferir webhooks para acompanhamento e manter consulta apenas como fallback/reconciliação.
-- Não adicionar novos `Http::get/post/delete` diretos fora do cliente Focus centralizado.
-- Toda nova chamada deve definir timeout, política de retry, classificação de erro e impacto no rate limit.
-- Testar 2xx, 4xx, 401, 404, 422, 429, 5xx, timeout e resposta inválida.
-- Manter tokens por empresa/ambiente e nunca usar um token de homologação em produção.
+Pendências conhecidas para a integração respeitar limites em escala: limite de concorrência por token, circuit breaker, polling adaptativo, métricas e fila própria com prioridade. Os limites numéricos devem ser configuráveis por ambiente e ajustados com base na resposta formal da Focus ou no contrato da conta.
