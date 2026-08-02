@@ -59,10 +59,9 @@ class StockMovementResource extends Resource
                             $query->where('user_id', auth()->id());
                         }
                     })
-                    ->searchable()
+                    ->searchable(['name', 'sku', 'barcode'])
                     ->preload()
                     ->required()
-                    ->native(false)
                     ->label('Produto'),
                 Forms\Components\Select::make('movement_type')
                     ->options([
