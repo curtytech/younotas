@@ -3,29 +3,29 @@
 namespace App\Actions;
 
 use App\Models\FocusNfseWebhookEvent;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Support\NfseStatus;
 use Illuminate\Support\Facades\DB;
 
 class HandleFocusNfseWebhookAction
 {
-    public function execute(array $payload): ?Service
+    public function execute(array $payload): ?ServiceOrder
     {
         $reference = $payload['ref'] ?? $payload['referencia'] ?? null;
         $payloadHash = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($payload, $reference, $payloadHash): ?Service {
+        return DB::transaction(function () use ($payload, $reference, $payloadHash): ?ServiceOrder {
             $event = FocusNfseWebhookEvent::firstOrCreate(
                 ['payload_hash' => $payloadHash],
                 ['reference' => $reference, 'payload' => $payload],
             );
 
             if ($event->processed_at) {
-                return $event->service;
+                return $event->serviceOrder;
             }
 
             $service = filled($reference)
-                ? Service::query()->where('focus_nfse_ref', $reference)->lockForUpdate()->first()
+                ? ServiceOrder::query()->where('focus_nfse_ref', $reference)->lockForUpdate()->first()
                 : null;
 
             if (! $service) {
@@ -49,13 +49,19 @@ class HandleFocusNfseWebhookAction
                     : $service->focus_nfse_error,
             ]);
 
-            $event->update(['service_id' => $service->id, 'processed_at' => now()]);
+            if ($status === NfseStatus::AUTHORIZED) {
+                $service->update(['status' => 'billed']);
+            } elseif ($status === NfseStatus::CANCELED) {
+                $service->update(['status' => 'completed']);
+            }
+
+            $event->update(['service_order_id' => $service->id, 'processed_at' => now()]);
 
             return $service;
         });
     }
 
-    private function resolveDocumentUrl(array $payload, Service $service): ?string
+    private function resolveDocumentUrl(array $payload, ServiceOrder $service): ?string
     {
         $url = $payload['url'] ?? $payload['url_danfe'] ?? $payload['caminho_danfse'] ?? $payload['caminho_danfe'] ?? null;
 

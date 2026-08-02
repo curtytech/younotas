@@ -3,7 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Sale;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Support\NfeStatus;
 use App\Support\NfseStatus;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -21,9 +21,9 @@ class FiscalStatusOverview extends BaseWidget
             }
         };
 
-        $nfseProcessing = Service::query()->tap($queryScope)->where('focus_nfse_status', NfseStatus::PROCESSING)->count();
-        $nfseAuthorized = Service::query()->tap($queryScope)->where('focus_nfse_status', NfseStatus::AUTHORIZED)->count();
-        $nfseErrors = Service::query()->tap($queryScope)->whereIn('focus_nfse_status', [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::TRANSPORT_ERROR])->count();
+        $nfseProcessing = ServiceOrder::query()->tap($queryScope)->where('focus_nfse_status', NfseStatus::PROCESSING)->count();
+        $nfseAuthorized = ServiceOrder::query()->tap($queryScope)->where('focus_nfse_status', NfseStatus::AUTHORIZED)->count();
+        $nfseErrors = ServiceOrder::query()->tap($queryScope)->whereIn('focus_nfse_status', [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::TRANSPORT_ERROR])->count();
 
         $nfeProcessing = Sale::query()->tap($queryScope)->whereIn('focus_nfe_status', [NfeStatus::SENDING, NfeStatus::PROCESSING])->count();
         $nfeAuthorized = Sale::query()->tap($queryScope)->where('focus_nfe_status', NfeStatus::AUTHORIZED)->count();
@@ -34,17 +34,17 @@ class FiscalStatusOverview extends BaseWidget
                 ->description('Aguardando retorno da prefeitura')
                 ->descriptionIcon('heroicon-m-arrow-path')
                 ->color('warning')
-                ->url(route('filament.admin.resources.services.index')),
+                ->url(route('filament.admin.resources.service-orders.index')),
             Stat::make('NFS-e autorizadas', $nfseAuthorized)
                 ->description('Emissões confirmadas')
                 ->descriptionIcon('heroicon-m-check-circle')
                 ->color('success')
-                ->url(route('filament.admin.resources.services.index')),
+                ->url(route('filament.admin.resources.service-orders.index')),
             Stat::make('Erros de NFS-e', $nfseErrors)
                 ->description('Requerem análise ou reenvio')
                 ->descriptionIcon('heroicon-m-exclamation-triangle')
                 ->color('danger')
-                ->url(route('filament.admin.resources.services.index')),
+                ->url(route('filament.admin.resources.service-orders.index')),
             Stat::make('NF-e em processamento', $nfeProcessing)
                 ->description('Aguardando retorno da SEFAZ')
                 ->descriptionIcon('heroicon-m-arrow-path')

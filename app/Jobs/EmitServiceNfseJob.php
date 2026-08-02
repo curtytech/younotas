@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\EmitServiceNfseAction;
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Support\NfseStatus;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -32,7 +32,7 @@ class EmitServiceNfseJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(EmitServiceNfseAction $action): void
     {
-        $service = Service::findOrFail($this->serviceId);
+        $service = ServiceOrder::findOrFail($this->serviceId);
         $action->execute($service);
         $service->refresh();
 
@@ -43,7 +43,7 @@ class EmitServiceNfseJob implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        $service = Service::find($this->serviceId);
+        $service = ServiceOrder::find($this->serviceId);
 
         if ($service) {
             $service->update([

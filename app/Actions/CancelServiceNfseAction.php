@@ -2,7 +2,7 @@
 
 namespace App\Actions;
 
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Services\FocusNfseService;
 use App\Support\NfseStatus;
 use RuntimeException;
@@ -14,7 +14,7 @@ class CancelServiceNfseAction
         protected FocusNfseService $focusNfseService,
     ) {}
 
-    public function execute(Service $service, string $justification): array
+    public function execute(ServiceOrder $service, string $justification): array
     {
         $service->refresh();
         if (! NfseStatus::canCancel($service->focus_nfse_status)) {
@@ -46,6 +46,10 @@ class CancelServiceNfseAction
                 ? ['response' => $response, 'at' => now()->toIso8601String()]
                 : null,
         ]);
+
+        if ($status === NfseStatus::CANCELED) {
+            $service->update(['status' => 'completed']);
+        }
 
         return $response;
     }

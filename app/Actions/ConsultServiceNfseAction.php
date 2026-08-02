@@ -2,7 +2,7 @@
 
 namespace App\Actions;
 
-use App\Models\Service;
+use App\Models\ServiceOrder;
 use App\Services\FocusNfseService;
 use App\Support\NfseStatus;
 use Throwable;
@@ -13,7 +13,7 @@ class ConsultServiceNfseAction
         protected FocusNfseService $focusNfseService,
     ) {}
 
-    public function execute(Service $service): array
+    public function execute(ServiceOrder $service): array
     {
         try {
             $response = $this->focusNfseService->consult($service);
@@ -48,6 +48,12 @@ class ConsultServiceNfseAction
                 ? ['response' => $response, 'at' => now()->toIso8601String()]
                 : $service->focus_nfse_error,
         ]);
+
+        if ($status === NfseStatus::AUTHORIZED) {
+            $service->update(['status' => 'billed']);
+        } elseif ($status === NfseStatus::CANCELED) {
+            $service->update(['status' => 'completed']);
+        }
 
         return $response;
     }

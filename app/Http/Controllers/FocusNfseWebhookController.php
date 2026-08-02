@@ -37,7 +37,7 @@ class FocusNfseWebhookController extends Controller
         return response()->json([
             'success' => true,
             'message' => $service ? 'Webhook NFS-e processado com sucesso.' : 'Webhook recebido para reconciliação.',
-            'service_id' => $service?->id,
+            'service_order_id' => $service?->id,
             'status' => $service?->focus_nfse_status,
         ], $service ? 200 : 202);
     }

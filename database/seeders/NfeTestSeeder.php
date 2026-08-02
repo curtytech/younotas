@@ -74,7 +74,6 @@ class NfeTestSeeder extends Seeder
             ['user_id' => $user->id, 'code' => 'SERVICO-TESTE'],
             Service::factory()->make([
                 'user_id' => $user->id,
-                'client_id' => $client->id,
                 'code' => 'SERVICO-TESTE',
             ])->toArray(),
         );
