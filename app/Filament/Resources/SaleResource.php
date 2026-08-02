@@ -69,9 +69,8 @@ class SaleResource extends Resource
                             $query->where('user_id', auth()->id());
                         }
                     })
-                    ->searchable()
+                    ->searchable(['name', 'email', 'document'])
                     ->preload()
-                    ->native(false)
                     ->columnSpan(9)
                     ->label('Cliente'),
                 Forms\Components\DatePicker::make('sale_date')
