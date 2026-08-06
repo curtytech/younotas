@@ -1,6 +1,7 @@
 <?php
 
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\FiscalDocumentResource;
 use App\Filament\Resources\FocusNfeSettingResource;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\SaleResource;
@@ -12,6 +13,7 @@ use App\Models\Appeal;
 use App\Models\Client;
 use App\Models\Driver;
 use App\Models\Fine;
+use App\Models\FiscalDocument;
 use App\Models\FocusNfeSetting;
 use App\Models\Product;
 use App\Models\Sale;
@@ -39,6 +41,7 @@ test('seed disponibiliza dados nas listas comerciais, fiscais e operacionais', f
         ->and(StockMovementResource::getEloquentQuery()->count())->toBeGreaterThan(0)
         ->and(TechnicianResource::getEloquentQuery()->count())->toBeGreaterThan(0)
         ->and(ServiceOrderResource::getEloquentQuery()->count())->toBeGreaterThan(0)
+        ->and(FiscalDocumentResource::getEloquentQuery()->count())->toBeGreaterThan(0)
         ->and(FocusNfeSettingResource::getEloquentQuery()->count())->toBeGreaterThan(0);
 });
 
@@ -54,7 +57,10 @@ test('seed disponibiliza dados nas entidades de frota, multas e auditoria', func
         ->and(Sale::where('user_id', $this->user->id)->count())->toBeGreaterThan(0)
         ->and(StockMovement::where('user_id', $this->user->id)->count())->toBeGreaterThan(0)
         ->and(Technician::where('user_id', $this->user->id)->count())->toBeGreaterThan(0)
-        ->and(ServiceOrder::where('user_id', $this->user->id)->count())->toBeGreaterThan(0);
+        ->and(ServiceOrder::where('user_id', $this->user->id)->count())->toBeGreaterThan(0)
+        ->and(ServiceOrder::where('user_id', $this->user->id)->whereNotNull('technician_id')->count())->toBeGreaterThan(0)
+        ->and(FiscalDocument::where('user_id', $this->user->id)->count())->toBe(2)
+        ->and(FiscalDocument::where('user_id', $this->user->id)->whereNull('source_type')->count())->toBe(2);
 });
 
 test('recalcula os totais da ordem de serviço ao salvar um item', function (): void {

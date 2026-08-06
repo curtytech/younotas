@@ -8,7 +8,6 @@ use App\Services\FocusNfeBackupService;
 use App\Services\FocusNfseImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use ZipArchive;
 
 uses(RefreshDatabase::class);
 
