@@ -30,5 +30,6 @@ class DatabaseSeeder extends Seeder
         $this->call(NfeTestSeeder::class);
         $this->call(FocusTestCompanySeeder::class);
         $this->call(AllTablesSeeder::class);
+        $this->call(FiscalDocumentSeeder::class);
     }
 }

@@ -44,11 +44,20 @@ class AllTablesSeeder extends Seeder
         );
         $product = Product::firstOrCreate(['user_id' => $user->id, 'sku' => 'PROD-SEED-001'], Product::factory()->make(['user_id' => $user->id, 'sku' => 'PROD-SEED-001'])->toArray());
         $service = Service::firstOrCreate(['user_id' => $user->id, 'code' => 'SERV-SEED-001'], Service::factory()->make(['user_id' => $user->id, 'code' => 'SERV-SEED-001'])->toArray());
-        Technician::firstOrCreate(['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'], Technician::factory()->make(['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'])->toArray());
+        $technician = Technician::firstOrCreate(
+            ['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'],
+            Technician::factory()->make(['user_id' => $user->id, 'email' => 'tecnico.seed@example.com'])->toArray(),
+        );
         $sale = Sale::firstOrCreate(['user_id' => $user->id, 'number' => 'SALE-SEED-000001'], Sale::factory()->make(['user_id' => $user->id, 'client_id' => $client->id, 'number' => 'SALE-SEED-000001'])->toArray());
         SaleItem::firstOrCreate(['sale_id' => $sale->id, 'product_id' => $product->id], SaleItem::factory()->make(['sale_id' => $sale->id, 'product_id' => $product->id, 'product_name' => $product->name, 'product_code' => (string) $product->id])->toArray());
         StockMovement::firstOrCreate(['user_id' => $user->id, 'product_id' => $product->id, 'reference' => 'STOCK-SEED-001'], StockMovement::factory()->make(['user_id' => $user->id, 'product_id' => $product->id, 'reference' => 'STOCK-SEED-001'])->toArray());
-        $order = ServiceOrder::firstOrCreate(['user_id' => $user->id, 'number' => 'OS-SEED-000001'], ['client_id' => $client->id, 'status' => 'draft']);
+        $order = ServiceOrder::firstOrCreate(
+            ['user_id' => $user->id, 'number' => 'OS-SEED-000001'],
+            ['client_id' => $client->id, 'technician_id' => $technician->id, 'status' => 'draft'],
+        );
+        if (blank($order->technician_id)) {
+            $order->update(['technician_id' => $technician->id]);
+        }
         if (! $order->items()->exists()) {
             ServiceOrderItem::create(['service_order_id' => $order->id, 'service_id' => $service->id, 'service_name' => $service->name, 'service_code' => $service->code, 'description' => $service->description, 'municipal_service_code' => $service->municipal_service_code, 'lc116_code' => $service->lc116_code, 'unit' => $service->unit, 'quantity' => 1, 'unit_price' => $service->unit_price, 'total_amount' => $service->unit_price, 'iss_aliquot' => $service->iss_aliquot]);
         }

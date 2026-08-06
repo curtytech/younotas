@@ -113,6 +113,7 @@ class FiscalDocumentResource extends Resource
                         'focus_individual' => 'Importada',
                         'xml_upload' => 'XML',
                         'manual' => 'Manual',
+                        'seed' => 'Demonstração',
                         default => '—',
                     })
                     ->color('gray')
