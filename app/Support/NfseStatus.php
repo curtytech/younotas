@@ -61,4 +61,25 @@ class NfseStatus
 
         return true;
     }
+
+    public static function isProcessingTimeout(array $response): bool
+    {
+        return self::errorCode($response) === 'tempo_excedido';
+    }
+
+    public static function errorCode(array $response): ?string
+    {
+        foreach ([
+            data_get($response, 'codigo'),
+            data_get($response, 'erro.codigo'),
+            data_get($response, 'erros.0.codigo'),
+            data_get($response, 'mensagens.0.codigo'),
+        ] as $code) {
+            if (is_scalar($code) && filled($code)) {
+                return mb_strtolower(trim((string) $code));
+            }
+        }
+
+        return null;
+    }
 }

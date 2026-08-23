@@ -52,7 +52,7 @@ class FocusNfseImportService
             'last_synced_at' => now(),
         ];
 
-        FiscalDocument::updateOrCreate(
+        FiscalDocument::withTrashed()->updateOrCreate(
             ['user_id' => $user->id, 'focus_reference' => $reference],
             $attributes,
         );

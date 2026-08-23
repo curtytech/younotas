@@ -56,7 +56,7 @@ class FiscalDocumentSeeder extends Seeder
         ];
 
         foreach ($documents as $document) {
-            FiscalDocument::firstOrCreate(
+            FiscalDocument::withTrashed()->firstOrCreate(
                 [
                     'user_id' => $user->id,
                     'focus_reference' => $document['focus_reference'],

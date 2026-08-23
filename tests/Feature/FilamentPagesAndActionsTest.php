@@ -4,6 +4,7 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Resources\ClientResource\Pages\CreateClient;
 use App\Filament\Resources\ClientResource\Pages\ListClients;
 use App\Filament\Resources\FiscalDocumentResource\Pages\ListFiscalDocuments;
+use App\Filament\Resources\FocusNfeSettingResource;
 use App\Filament\Resources\FocusNfeSettingResource\Pages\CreateFocusNfeSetting;
 use App\Filament\Resources\FocusNfeSettingResource\Pages\ListFocusNfeSettings;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
@@ -39,11 +40,13 @@ test('painel e páginas principais carregam para uma empresa', function (): void
         ListServiceOrders::class,
         ListSales::class,
         ListStockMovements::class,
-        ListFocusNfeSettings::class,
         ListFiscalDocuments::class,
     ] as $page) {
         Livewire::test($page)->assertOk();
     }
+
+    Livewire::test(ListFocusNfeSettings::class)
+        ->assertRedirect(FocusNfeSettingResource::getUrl('create'));
 });
 
 test('listas de cadastros exibem o botão de criar para uma empresa', function (): void {
@@ -58,12 +61,14 @@ test('listas de cadastros exibem o botão de criar para uma empresa', function (
         ListServiceOrders::class,
         ListSales::class,
         ListStockMovements::class,
-        ListFocusNfeSettings::class,
     ] as $page) {
         Livewire::test($page)
             ->assertOk()
             ->assertActionVisible('create');
     }
+
+    Livewire::test(ListFocusNfeSettings::class)
+        ->assertRedirect(FocusNfeSettingResource::getUrl('create'));
 });
 
 test('cadastro de empresas só aparece para administradores', function (): void {

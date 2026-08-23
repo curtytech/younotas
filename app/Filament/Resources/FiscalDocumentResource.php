@@ -143,29 +143,13 @@ class FiscalDocumentResource extends Resource
                         'erro_emissao' => 'Erro de envio',
                     ])
                     ->label('Situação'),
+                Tables\Filters\TrashedFilter::make()
+                    ->label('Arquivamento')
+                    ->placeholder('Somente ativos')
+                    ->trueLabel('Ativos e arquivados')
+                    ->falseLabel('Somente arquivados'),
             ])
             ->actions([
-                Tables\Actions\Action::make('consultar')
-                    ->label('Consultar')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('info')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['processando', 'enviando'], true) && $record->isLinked())
-                    ->action(function (FiscalDocument $record): void {
-                        self::dispatchForSource($record, 'consult');
-                    })
-                    ->successNotificationTitle('Consulta agendada'),
-                Tables\Actions\Action::make('reenviar')
-                    ->label('Reenviar')
-                    ->icon('heroicon-o-arrow-uturn-right')
-                    ->color('warning')
-                    ->requiresConfirmation()
-                    ->modalHeading('Reenviar documento fiscal?')
-                    ->modalDescription('O payload será reconstruído com a configuração atual antes do envio.')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true) && $record->isLinked())
-                    ->action(function (FiscalDocument $record): void {
-                        self::dispatchForSource($record, 'emit');
-                    })
-                    ->successNotificationTitle('Reenvio agendado'),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('abrir_documento')
                         ->label('Abrir Documento')
@@ -173,6 +157,27 @@ class FiscalDocumentResource extends Resource
                         ->url(fn (FiscalDocument $record): ?string => $record->document_url)
                         ->openUrlInNewTab()
                         ->visible(fn (FiscalDocument $record): bool => filled($record->document_url)),
+                    Tables\Actions\Action::make('consultar')
+                        ->label('Consultar')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('info')
+                        ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['processando', 'enviando'], true) && $record->isLinked())
+                        ->action(function (FiscalDocument $record): void {
+                            self::dispatchForSource($record, 'consult');
+                        })
+                        ->successNotificationTitle('Consulta agendada'),
+                    Tables\Actions\Action::make('reenviar')
+                        ->label('Reenviar')
+                        ->icon('heroicon-o-arrow-uturn-right')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Reenviar documento fiscal?')
+                        ->modalDescription('O payload será reconstruído com a configuração atual antes do envio.')
+                        ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true) && $record->isLinked())
+                        ->action(function (FiscalDocument $record): void {
+                            self::dispatchForSource($record, 'emit');
+                        })
+                        ->successNotificationTitle('Reenvio agendado'),
                     Tables\Actions\Action::make('cancelar_nota')
                         ->label('Cancelar Nota')
                         ->icon('heroicon-o-x-circle')
@@ -193,6 +198,31 @@ class FiscalDocumentResource extends Resource
                             self::dispatchForSource($record, 'cancel', $data['justification']);
                         })
                         ->successNotificationTitle('Cancelamento da nota enfileirado.'),
+                    Tables\Actions\Action::make('arquivar')
+                        ->label('Arquivar')
+                        ->icon('heroicon-o-archive-box')
+                        ->color('gray')
+                        ->requiresConfirmation()
+                        ->modalHeading('Arquivar documento fiscal?')
+                        ->modalDescription(fn (FiscalDocument $record): string => in_array($record->status, ['processando', 'enviando'], true)
+                            ? 'A nota continuará sendo consultada em segundo plano e poderá ser autorizada posteriormente. O registro apenas ficará oculto da listagem principal.'
+                            : 'O documento sairá da listagem principal, mas continuará preservado para auditoria e poderá ser restaurado.')
+                        ->visible(fn (FiscalDocument $record): bool => ! $record->trashed())
+                        ->action(function (FiscalDocument $record): void {
+                            $record->delete();
+                        })
+                        ->successNotificationTitle('Documento fiscal arquivado.'),
+                    Tables\Actions\Action::make('restaurar')
+                        ->label('Restaurar')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar documento fiscal?')
+                        ->visible(fn (FiscalDocument $record): bool => $record->trashed())
+                        ->action(function (FiscalDocument $record): void {
+                            $record->restore();
+                        })
+                        ->successNotificationTitle('Documento fiscal restaurado.'),
                 ])
                     ->icon('heroicon-o-ellipsis-vertical')
                     ->label('Ações'),

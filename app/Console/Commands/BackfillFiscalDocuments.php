@@ -29,7 +29,7 @@ class BackfillFiscalDocuments extends Command
         Sale::query()
             ->where(fn ($query) => $query->whereNotNull('focus_nfe_ref')->orWhereNotNull('focus_nfe_status'))
             ->each(function (Sale $sale) use (&$count): void {
-                FiscalDocument::updateOrCreate(
+                FiscalDocument::withTrashed()->updateOrCreate(
                     ['user_id' => $sale->user_id, 'source_type' => Sale::class, 'source_id' => $sale->id],
                     [
                         'document_type' => 'NF-e',
@@ -61,7 +61,7 @@ class BackfillFiscalDocuments extends Command
         ServiceOrder::query()
             ->where(fn ($query) => $query->whereNotNull('focus_nfse_ref')->orWhereNotNull('focus_nfse_status'))
             ->each(function (ServiceOrder $serviceOrder) use (&$count): void {
-                FiscalDocument::updateOrCreate(
+                FiscalDocument::withTrashed()->updateOrCreate(
                     ['user_id' => $serviceOrder->user_id, 'source_type' => ServiceOrder::class, 'source_id' => $serviceOrder->id],
                     [
                         'document_type' => 'NFS-e',
@@ -71,6 +71,7 @@ class BackfillFiscalDocuments extends Command
                         'document_number' => $serviceOrder->focus_nfse_number,
                         'status' => $serviceOrder->focus_nfse_status,
                         'issued_at' => $serviceOrder->completed_at,
+                        'total_amount' => $serviceOrder->total_amount,
                         'document_url' => $serviceOrder->focus_nfse_url,
                         'raw_response' => $serviceOrder->focus_nfse_response_secure,
                         'metadata' => array_replace($serviceOrder->focus_nfse_payload ?? [], ['origin' => 'emitted']),

@@ -1,5 +1,6 @@
 <?php
 
+use App\Filament\Resources\FiscalDocumentResource\Pages\ListFiscalDocuments;
 use App\Models\Client;
 use App\Models\FiscalDocument;
 use App\Models\Product;
@@ -9,6 +10,7 @@ use App\Models\ServiceOrder;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -114,4 +116,86 @@ test('chave de acesso única por empresa impede duplicidade', function (): void 
         'access_key' => 'NFe35191234567890000123550010000000011000000001',
         'focus_reference' => null,
     ]))->toThrow(QueryException::class);
+});
+
+test('documento fiscal pode ser arquivado e restaurado sem perder os dados', function (): void {
+    $document = FiscalDocument::factory()->create([
+        'focus_reference' => 'archive-reference-001',
+    ]);
+
+    $document->delete();
+
+    expect(FiscalDocument::query()->find($document->id))->toBeNull()
+        ->and(FiscalDocument::withTrashed()->find($document->id)?->trashed())->toBeTrue()
+        ->and(FiscalDocument::withTrashed()->find($document->id)?->focus_reference)->toBe('archive-reference-001');
+
+    $document->restore();
+
+    expect(FiscalDocument::query()->find($document->id))->not->toBeNull()
+        ->and(FiscalDocument::withTrashed()->find($document->id)?->trashed())->toBeFalse();
+});
+
+test('sincronização mantém o mesmo documento quando ele está arquivado', function (): void {
+    $user = makeUser();
+    $serviceOrder = makeServiceOrderWithNfse($user);
+    $document = FiscalDocument::syncFromServiceOrder($serviceOrder);
+
+    $document->delete();
+
+    $synced = FiscalDocument::syncFromServiceOrder($serviceOrder->fresh());
+
+    expect($synced->id)->toBe($document->id)
+        ->and(FiscalDocument::withTrashed()->whereKey($document->id)->count())->toBe(1)
+        ->and($synced->trashed())->toBeTrue();
+});
+
+test('histórico fiscal permite arquivar um documento pela tabela', function (): void {
+    $user = makeUser();
+    $document = FiscalDocument::factory()->create([
+        'user_id' => $user->id,
+        'focus_reference' => 'archive-ui-reference-001',
+        'status' => 'autorizado',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test(ListFiscalDocuments::class)
+        ->assertTableActionVisible('arquivar', $document)
+        ->callTableAction('arquivar', $document);
+
+    expect(FiscalDocument::query()->find($document->id))->toBeNull()
+        ->and(FiscalDocument::withTrashed()->find($document->id)?->trashed())->toBeTrue();
+
+    $trashedDocument = FiscalDocument::withTrashed()->findOrFail($document->id);
+
+    Livewire::test(ListFiscalDocuments::class)
+        ->filterTable('trashed', false)
+        ->assertTableActionVisible('restaurar', $trashedDocument)
+        ->callTableAction('restaurar', $trashedDocument);
+
+    expect(FiscalDocument::query()->find($document->id))->not->toBeNull();
+});
+
+test('menu de contexto permanece disponível para documento em processamento', function (): void {
+    $user = makeUser();
+    $serviceOrder = ServiceOrder::factory()->create([
+        'user_id' => $user->id,
+        'focus_nfse_ref' => 'nfse-processing-menu-001',
+        'focus_nfse_status' => 'processando',
+    ]);
+    $document = FiscalDocument::factory()->nfse()->create([
+        'user_id' => $user->id,
+        'source_type' => ServiceOrder::class,
+        'source_id' => $serviceOrder->id,
+        'focus_reference' => $serviceOrder->focus_nfse_ref,
+        'status' => 'processando',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test(ListFiscalDocuments::class)
+        ->assertTableActionVisible('consultar', $document)
+        ->assertTableActionVisible('arquivar', $document)
+        ->assertTableActionHidden('cancelar_nota', $document)
+        ->assertTableActionHidden('reenviar', $document);
 });

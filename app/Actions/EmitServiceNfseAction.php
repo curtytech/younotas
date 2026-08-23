@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Exceptions\FocusNfseRequestException;
 use App\Jobs\ReconcileFocusNfseWebhooksJob;
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
 use App\Services\FocusNfseService;
 use App\Support\NfseStatus;
@@ -30,7 +31,10 @@ class EmitServiceNfseAction
             }
 
             $config = $this->focusNfseService->configurationFor($locked);
-            $reference = $locked->focus_nfse_ref ?: (string) Str::uuid();
+            $reference = $locked->focus_nfse_ref;
+            if (blank($reference) || ($locked->focus_nfse_status === NfseStatus::AUTHORIZATION_ERROR && ! preg_match('/^[A-Za-z0-9]+$/', $reference))) {
+                $reference = 'nfse'.$locked->id.Str::lower(Str::random(16));
+            }
             $payload = $locked->focus_nfse_status === NfseStatus::AUTHORIZATION_ERROR
                 ? $this->focusNfseService->buildPayload($locked, $config)
                 : ($locked->focus_nfse_payload ?: $this->focusNfseService->buildPayload($locked, $config));
@@ -94,6 +98,8 @@ class EmitServiceNfseAction
                 'at' => now()->toIso8601String(),
             ],
         ]);
+
+        FiscalDocument::syncFromServiceOrder($service->fresh());
     }
 
     protected function persistResponse(int $serviceId, string $reference, array $response): void
@@ -115,5 +121,7 @@ class EmitServiceNfseAction
         if ($status === NfseStatus::AUTHORIZED) {
             $service->update(['status' => 'billed']);
         }
+
+        FiscalDocument::syncFromServiceOrder($service->fresh());
     }
 }

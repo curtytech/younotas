@@ -12,6 +12,12 @@ use RuntimeException;
 
 class FocusNfseService
 {
+    /**
+     * Magé uses the Modernização Pública provider. Its guide explicitly says
+     * that the municipal tax-code field is not used and that CNAE is required.
+     */
+    protected const MAGE_IBGE_CODE = '3302502';
+
     public function __construct(
         protected FocusNfeConfigService $focusNfeConfigService,
         protected FocusApiClient $apiClient,
@@ -77,7 +83,7 @@ class FocusNfseService
     {
         $service->loadMissing('client', 'items');
         $this->guardRequiredConfiguration($focusConfig);
-        $this->guardRequiredModelData($service);
+        $this->guardRequiredModelData($service, $focusConfig);
 
         $client = $service->client;
         $prestadorMunicipio = $this->onlyDigits((string) data_get($focusConfig, 'prestador.codigo_municipio'));
@@ -90,6 +96,12 @@ class FocusNfseService
             $item->service_name,
             filled($item->description) ? ': '.$item->description : '',
         ))->implode('; ');
+
+        $itemListaServico = filled($firstItem?->lc116_code)
+            ? ($this->isMage($focusConfig)
+                ? $this->normalizeLc116Code($firstItem->lc116_code)
+                : trim((string) $firstItem->lc116_code))
+            : (string) ($firstItem?->municipal_service_code ?? '');
 
         return [
             'data_emissao' => now('America/Sao_Paulo')->toIso8601String(),
@@ -119,9 +131,9 @@ class FocusNfseService
             'servico' => array_filter([
                 'valor_servicos' => $serviceValue,
                 'iss_retido' => false,
-                'item_lista_servico' => (string) ($firstItem?->lc116_code ?: $firstItem?->municipal_service_code),
+                'item_lista_servico' => $itemListaServico,
                 'codigo_cnae' => filled($firstItem?->cnae_code) ? $this->onlyDigits($firstItem->cnae_code) : null,
-                'codigo_tributacao_municipio' => $firstItem?->municipal_service_code,
+                'codigo_tributario_municipio' => $this->municipalTaxCode($focusConfig, $firstItem?->municipal_service_code),
                 'codigo_nbs' => $firstItem?->nbs_code,
                 'discriminacao' => $description ?: 'Serviços da Ordem '.$service->number,
                 'codigo_municipio' => $prestadorMunicipio,
@@ -184,7 +196,7 @@ class FocusNfseService
         }
     }
 
-    protected function guardRequiredModelData(ServiceOrder $service): void
+    protected function guardRequiredModelData(ServiceOrder $service, array $focusConfig): void
     {
         $client = $service->client;
         if (! $client || $client->user_id !== $service->user_id) {
@@ -201,6 +213,10 @@ class FocusNfseService
 
         if ($service->items->contains(fn ($item): bool => blank($item->lc116_code) && blank($item->municipal_service_code))) {
             throw new RuntimeException('Cada item da O.S. deve possuir código LC 116 ou código municipal.');
+        }
+
+        if ($this->isMage($focusConfig) && $service->items->contains(fn ($item): bool => blank($item->cnae_code))) {
+            throw new RuntimeException('Cada item da O.S. deve possuir código CNAE para emissão em Magé/RJ.');
         }
 
         if ($service->items->pluck('lc116_code')->filter()->unique()->count() > 1
@@ -308,5 +324,44 @@ class FocusNfseService
     protected function onlyDigits(string $value): string
     {
         return preg_replace('/\D/', '', $value) ?? '';
+    }
+
+    protected function normalizeLc116Code(mixed $value): ?string
+    {
+        $code = trim((string) $value);
+
+        if ($code === '') {
+            return null;
+        }
+
+        $digits = $this->onlyDigits($code);
+
+        if (preg_match('/^\d{4}$/', $digits) === 1) {
+            return substr($digits, 0, 2).'.'.substr($digits, 2, 2);
+        }
+
+        if (preg_match('/^\d\.\d{2}$/', $code) === 1) {
+            return '0'.$code;
+        }
+
+        if (preg_match('/^\d{2}\.\d$/', $code) === 1) {
+            return $code.'0';
+        }
+
+        return $code;
+    }
+
+    protected function municipalTaxCode(array $focusConfig, mixed $value): ?string
+    {
+        if ($this->isMage($focusConfig) || blank($value)) {
+            return null;
+        }
+
+        return trim((string) $value);
+    }
+
+    protected function isMage(array $focusConfig): bool
+    {
+        return $this->onlyDigits((string) data_get($focusConfig, 'prestador.codigo_municipio')) === self::MAGE_IBGE_CODE;
     }
 }

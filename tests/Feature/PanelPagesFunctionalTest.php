@@ -117,7 +117,6 @@ test('rotas das páginas do painel respondem 200 para os perfis autorizados', fu
         SaleResource::getUrl('create'),
         StockMovementResource::getUrl('index'),
         StockMovementResource::getUrl('create'),
-        FocusNfeSettingResource::getUrl('index'),
         FocusNfeSettingResource::getUrl('create'),
         FiscalDocumentResource::getUrl('index'),
         ClientResource::getUrl('edit', ['record' => $client]),
@@ -132,9 +131,14 @@ test('rotas das páginas do painel respondem 200 para os perfis autorizados', fu
         $this->assertSame(200, $response->status(), $url);
     }
 
+    $this->get(FocusNfeSettingResource::getUrl('index'))
+        ->assertRedirect(FocusNfeSettingResource::getUrl('create'));
+
     $setting = FocusNfeSetting::factory()->create(['user_id' => $this->enterprise->id]);
 
     $this->get(FocusNfeSettingResource::getUrl('edit', ['record' => $setting]))->assertOk();
+    $this->get(FocusNfeSettingResource::getUrl('index'))
+        ->assertRedirect(FocusNfeSettingResource::getUrl('edit', ['record' => $setting]));
 
     $this->actingAs($this->admin);
 
@@ -180,7 +184,6 @@ test('componentes Livewire das páginas principais montam sem erro', function ()
         ListServiceOrders::class,
         ListSales::class,
         ListStockMovements::class,
-        ListFocusNfeSettings::class,
         ListFiscalDocuments::class,
         CreateClient::class,
         CreateProduct::class,
@@ -192,6 +195,9 @@ test('componentes Livewire das páginas principais montam sem erro', function ()
     ] as $page) {
         Livewire::test($page)->assertOk();
     }
+
+    Livewire::test(ListFocusNfeSettings::class)
+        ->assertRedirect(FocusNfeSettingResource::getUrl('edit', ['record' => $setting]));
 
     foreach ([
         [EditClient::class, $client],

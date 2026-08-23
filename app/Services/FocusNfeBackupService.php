@@ -130,7 +130,7 @@ class FocusNfeBackupService
             'last_synced_at' => now(),
         ];
 
-        $existing = FiscalDocument::query()
+        $existing = FiscalDocument::withTrashed()
             ->where('user_id', $user->id)
             ->where('access_key', $data['access_key'])
             ->first();

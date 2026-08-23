@@ -4,13 +4,16 @@ use App\Actions\CancelServiceNfseAction;
 use App\Actions\ConsultServiceNfseAction;
 use App\Actions\EmitServiceNfseAction;
 use App\Actions\HandleFocusNfseWebhookAction;
+use App\Jobs\ConsultServiceNfseJob;
+use App\Jobs\EmitServiceNfseJob;
 use App\Jobs\ReconcileFocusNfseWebhooksJob;
 use App\Models\Client;
+use App\Models\FiscalDocument;
 use App\Models\FocusNfseWebhookEvent;
 use App\Models\ServiceOrder;
-use App\Models\ServiceOrderItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -98,17 +101,52 @@ test('pode emitir nfse via focus nfe', function (): void {
     expect($response['status'])->toBe('processando');
 
     $this->service->refresh();
-    expect($this->service->focus_nfse_status)->toBe('processando');
+    expect($this->service->focus_nfse_status)->toBe('processando')
+        ->and($this->service->focus_nfse_ref)->toMatch('/^[A-Za-z0-9]+$/');
     expect($this->service->focus_nfse_ref)->not->toBeNull();
     expect($this->service->focus_nfse_response_secure['status'])->toBe('processando');
     expect($this->service->focus_nfse_response)->toBeNull();
+
+    $document = FiscalDocument::query()
+        ->where('source_type', $this->service::class)
+        ->where('source_id', $this->service->id)
+        ->first();
+
+    expect($document)->not->toBeNull()
+        ->and($document->document_type)->toBe('NFS-e')
+        ->and($document->focus_reference)->toBe($this->service->focus_nfse_ref)
+        ->and((string) $document->total_amount)->toBe('1500.00');
 
     Http::assertSent(function ($request): bool {
         return Str::contains($request->url(), '/v2/nfse')
             && $request['servico']['valor_servicos'] == 1500.00
             && $request['servico']['item_lista_servico'] === '0107'
+            && $request['servico']['codigo_tributario_municipio'] === '0107'
+            && ! array_key_exists('codigo_tributacao_municipio', $request['servico'])
             && $request['tomador']['endereco']['codigo_municipio'] === '3550308'
             && $request->hasHeader('Authorization', 'Basic '.base64_encode('token_test_focus_123:'));
+    });
+});
+
+test('monta o payload conforme as regras de Magé', function (): void {
+    $this->user->focusNfeSetting->update([
+        'settings' => array_replace_recursive($this->user->focusNfeSetting->settings, [
+            'prestador' => ['codigo_municipio' => '3302502'],
+        ]),
+    ]);
+
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/nfse*' => Http::response(['status' => 'processando'], 201),
+    ]);
+
+    app(EmitServiceNfseAction::class)->execute($this->service);
+
+    Http::assertSent(function ($request): bool {
+        return $request['prestador']['codigo_municipio'] === '3302502'
+            && $request['servico']['item_lista_servico'] === '01.07'
+            && $request['servico']['codigo_cnae'] === '6201501'
+            && ! array_key_exists('codigo_tributario_municipio', $request['servico'])
+            && ! array_key_exists('codigo_tributacao_municipio', $request['servico']);
     });
 });
 
@@ -136,6 +174,67 @@ test('pode consultar status de nfse emitida', function (): void {
     expect($this->service->focus_nfse_status)->toBe('autorizado');
     expect($this->service->focus_nfse_number)->toBe('202600001');
     expect($this->service->focus_nfse_url)->toBe('https://homologacao.focusnfe.com.br/danfse/202600001.pdf');
+});
+
+test('preserva o erro tempo_excedido e permite reconciliação posterior', function (): void {
+    $this->service->update([
+        'focus_nfse_ref' => 'ref-test-timeout',
+        'focus_nfse_status' => 'processando',
+    ]);
+
+    $response = [
+        'status' => 'erro_autorizacao',
+        'erros' => [[
+            'codigo' => 'tempo_excedido',
+            'correcao' => 'Aguardar processamento do documento.',
+            'mensagem' => 'Documento fiscal finalizado por tempo de processamento excedido.',
+        ]],
+    ];
+
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/nfse/ref-test-timeout*' => Http::response($response, 200),
+    ]);
+
+    $action = app(ConsultServiceNfseAction::class);
+    expect($action->execute($this->service))->toBe($response)
+        ->and($action->isProcessingTimeout($response))->toBeTrue();
+
+    $this->service->refresh();
+    expect($this->service->focus_nfse_status)->toBe('erro_autorizacao')
+        ->and($this->service->focus_nfse_error['operation'])->toBe('consulta')
+        ->and($this->service->focus_nfse_error['code'])->toBe('tempo_excedido');
+});
+
+test('agenda consulta quando o envio já retorna tempo_excedido', function (): void {
+    Bus::fake();
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/nfse*' => Http::response([
+            'status' => 'erro_autorizacao',
+            'erros' => [['codigo' => 'tempo_excedido']],
+        ], 200),
+    ]);
+
+    (new EmitServiceNfseJob($this->service->id))->handle(app(EmitServiceNfseAction::class));
+
+    Bus::assertDispatched(ConsultServiceNfseJob::class, fn (ConsultServiceNfseJob $job): bool => $job->serviceId === $this->service->id);
+});
+
+test('troca referência antiga com hífens ao reenviar erro de autorização', function (): void {
+    $oldReference = 'af390e14-0b40-4161-b0a9-b06858172535';
+    $this->service->update([
+        'focus_nfse_ref' => $oldReference,
+        'focus_nfse_status' => 'erro_autorizacao',
+    ]);
+
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/nfse*' => Http::response(['status' => 'processando'], 201),
+    ]);
+
+    app(EmitServiceNfseAction::class)->execute($this->service);
+
+    expect($this->service->refresh()->focus_nfse_ref)
+        ->not->toBe($oldReference)
+        ->toMatch('/^[A-Za-z0-9]+$/');
 });
 
 test('pode cancelar nfse autorizada', function (): void {

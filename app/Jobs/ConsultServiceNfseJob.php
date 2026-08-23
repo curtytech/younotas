@@ -39,10 +39,11 @@ class ConsultServiceNfseJob implements ShouldBeUnique, ShouldQueue
     public function handle(ConsultServiceNfseAction $action): void
     {
         $service = ServiceOrder::findOrFail($this->serviceId);
-        $action->execute($service);
+        $response = $action->execute($service);
         $service->refresh();
 
-        if ($service->focus_nfse_status === NfseStatus::PROCESSING) {
+        if ($service->focus_nfse_status === NfseStatus::PROCESSING
+            || ($service->focus_nfse_status === NfseStatus::AUTHORIZATION_ERROR && NfseStatus::isProcessingTimeout($response))) {
             $this->release(300);
         }
     }

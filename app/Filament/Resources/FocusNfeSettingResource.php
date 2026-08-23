@@ -29,6 +29,21 @@ class FocusNfeSettingResource extends Resource
 
     protected static ?int $navigationSort = 40;
 
+    public static function getNavigationUrl(): string
+    {
+        if (auth()->check() && auth()->user()->role !== 'admin') {
+            $setting = FocusNfeSetting::query()
+                ->where('user_id', auth()->id())
+                ->first();
+
+            return $setting
+                ? static::getUrl('edit', ['record' => $setting])
+                : static::getUrl('create');
+        }
+
+        return parent::getNavigationUrl();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()->with('user');

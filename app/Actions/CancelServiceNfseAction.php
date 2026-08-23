@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
 use App\Services\FocusNfseService;
 use App\Support\NfseStatus;
@@ -33,6 +34,8 @@ class CancelServiceNfseAction
                 ],
             ]);
 
+            FiscalDocument::syncFromServiceOrder($service->fresh());
+
             throw $exception;
         }
 
@@ -50,6 +53,8 @@ class CancelServiceNfseAction
         if ($status === NfseStatus::CANCELED) {
             $service->update(['status' => 'completed']);
         }
+
+        FiscalDocument::syncFromServiceOrder($service->fresh());
 
         return $response;
     }

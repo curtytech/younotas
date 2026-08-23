@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Models\FocusNfseWebhookEvent;
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
 use App\Support\NfseStatus;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +55,8 @@ class HandleFocusNfseWebhookAction
             } elseif ($status === NfseStatus::CANCELED) {
                 $service->update(['status' => 'completed']);
             }
+
+            FiscalDocument::syncFromServiceOrder($service->fresh());
 
             $event->update(['service_order_id' => $service->id, 'processed_at' => now()]);
 
