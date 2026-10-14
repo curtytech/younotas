@@ -30,10 +30,25 @@ class EmitServiceNfseAction
             }
 
             $config = $this->focusNfseService->configurationFor($locked);
-            $reference = $locked->focus_nfse_ref ?: (string) Str::uuid();
-            $payload = $locked->focus_nfse_status === NfseStatus::AUTHORIZATION_ERROR
-                ? $this->focusNfseService->buildPayload($locked, $config)
-                : ($locked->focus_nfse_payload ?: $this->focusNfseService->buildPayload($locked, $config));
+            // A referência é mantida em retries e após rejeição; uma nota cancelada exige nova referência.
+            $newReference = blank($locked->focus_nfse_ref) || NfseStatus::requiresNewReference($locked->focus_nfse_status);
+            $reference = $newReference ? (string) Str::uuid() : $locked->focus_nfse_ref;
+            // Retry de falha ambígua repete o payload original; nos demais casos a nota é remontada com os dados atuais.
+            $reusePayload = ! $newReference
+                && $locked->focus_nfse_status === NfseStatus::TRANSPORT_ERROR
+                && NfseStatus::isAmbiguousFailure($locked->focus_nfse_error)
+                && filled($locked->focus_nfse_payload);
+            $payload = $reusePayload ? $locked->focus_nfse_payload : $this->focusNfseService->buildPayload($locked, $config);
+
+            if ($newReference) {
+                $locked->fill([
+                    'focus_nfse_number' => null,
+                    'focus_nfse_url' => null,
+                    'focus_nfse_response_secure' => null,
+                    'focus_nfse_last_checked_at' => null,
+                    'focus_nfse_last_webhook_at' => null,
+                ]);
+            }
 
             $locked->update([
                 'focus_nfse_ref' => $reference,

@@ -36,7 +36,7 @@ class CancelServiceNfseAction
             throw $exception;
         }
 
-        $status = $response['status'] ?? NfseStatus::CANCELED;
+        $status = NfseStatus::normalize($response['status'] ?? NfseStatus::CANCELED);
 
         $service->update([
             'focus_nfse_status' => $status,

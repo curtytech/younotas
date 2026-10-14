@@ -4,15 +4,19 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ClientResource\Pages;
 use App\Models\Client;
+use App\Models\User;
+use App\Services\FocusMunicipioService;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class ClientResource extends Resource
 {
@@ -147,17 +151,22 @@ class ClientResource extends Resource
                     ->string()
                     ->minLength(2)
                     ->maxLength(255)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn (Get $get, Set $set) => static::fillIbgeCode($get, $set))
                     ->label('Cidade'),
                 Forms\Components\TextInput::make('ibge_code')
                     ->required()
                     ->numeric()
                     ->length(7)
-                    ->helperText('Código IBGE de 7 dígitos do município do tomador.')
+                    ->helperText('Preenchido automaticamente a partir da cidade e UF. Pode ser alterado manualmente.')
                     ->label('Código IBGE do município'),
                 Forms\Components\TextInput::make('state')
                     ->string()
                     ->length(2)
                     ->maxLength(2)
+                    ->live(onBlur: true)
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? Str::upper(trim($state)) : null)
+                    ->afterStateUpdated(fn (Get $get, Set $set) => static::fillIbgeCode($get, $set))
                     ->label('UF'),
                 Forms\Components\TextInput::make('zip_code')
                     ->string()
@@ -174,6 +183,16 @@ class ClientResource extends Resource
                     ->default(true)
                     ->label('Ativo'),
             ]);
+    }
+
+    protected static function fillIbgeCode(Get $get, Set $set): void
+    {
+        $user = User::find($get('user_id') ?: auth()->id());
+        $code = app(FocusMunicipioService::class)->ibgeCodeFor($user, $get('city'), $get('state'));
+
+        if ($code !== null) {
+            $set('ibge_code', $code);
+        }
     }
 
     public static function table(Table $table): Table

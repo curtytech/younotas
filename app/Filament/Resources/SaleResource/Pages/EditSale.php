@@ -34,7 +34,8 @@ class EditSale extends EditRecord
                 ->url(fn (): string => route('sales.danfe-preview', $this->record))
                 ->openUrlInNewTab(),
             Actions\Action::make('emitir_nfe')
-                ->label('Emitir NF-e')->icon('heroicon-o-paper-airplane')
+                ->label(fn (): string => NfeStatus::requiresNewReference($this->record->focus_nfe_status) ? 'Emitir nova NF-e' : 'Emitir NF-e')
+                ->icon('heroicon-o-paper-airplane')
                 ->visible(fn (): bool => NfeStatus::canEmit($this->record->focus_nfe_status))
                 ->requiresConfirmation()
                 ->action(fn (): mixed => EmitSaleNfeJob::dispatch($this->record->id))

@@ -249,6 +249,7 @@ class FocusNfeSettingResource extends Resource
                             ->string()
                             ->maxLength(10)
                             ->default('5102')
+                            ->helperText('Usado quando o produto não tem CFOP próprio. Informe o CFOP dentro do estado; vendas para outra UF usam 6xxx automaticamente.')
                             ->label('CFOP padrão'),
                         Forms\Components\TextInput::make('settings.nfe.codigo_ncm_padrao')
                             ->string()
@@ -270,13 +271,15 @@ class FocusNfeSettingResource extends Resource
                             ->required()
                             ->string()
                             ->maxLength(5)
-                            ->default('07')
+                            ->default('49')
+                            ->helperText('Simples Nacional: 49 (outras operações de saída). Confirme com o contador.')
                             ->label('Situação tributária PIS'),
                         Forms\Components\TextInput::make('settings.nfe.cofins_situacao_tributaria')
                             ->required()
                             ->string()
                             ->maxLength(5)
-                            ->default('07')
+                            ->default('49')
+                            ->helperText('Simples Nacional: 49 (outras operações de saída). Confirme com o contador.')
                             ->label('Situação tributária COFINS'),
                         Forms\Components\TextInput::make('settings.nfe.valor_frete')
                             ->numeric()

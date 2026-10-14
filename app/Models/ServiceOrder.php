@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FiscalDocumentRecorder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -34,6 +35,14 @@ class ServiceOrder extends Model
 
     protected static function booted(): void
     {
+        static::saved(function (ServiceOrder $order): void {
+            $tracked = ['focus_nfse_ref', 'focus_nfse_status', 'focus_nfse_number', 'focus_nfse_url', 'focus_nfse_last_checked_at', 'focus_nfse_last_webhook_at'];
+
+            if (filled($order->focus_nfse_ref) && ($order->wasRecentlyCreated || $order->wasChanged($tracked))) {
+                app(FiscalDocumentRecorder::class)->recordServiceOrder($order);
+            }
+        });
+
         static::saving(function (ServiceOrder $order): void {
             if (! $order->exists || ! $order->isDirty('status')) {
                 return;

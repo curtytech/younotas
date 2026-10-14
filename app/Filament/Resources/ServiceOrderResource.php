@@ -87,7 +87,7 @@ class ServiceOrderResource extends Resource
             Tables\Columns\TextColumn::make('total_amount')->money('BRL')->label('Total'),
         ])->actions([
             Tables\Actions\EditAction::make(),
-            Tables\Actions\Action::make('emitir_nfse')->label('Emitir NFS-e')->color('success')->visible(fn (ServiceOrder $r): bool => $r->status === 'completed' && NfseStatus::canEmit($r->focus_nfse_status))->requiresConfirmation()->action(fn (ServiceOrder $r) => EmitServiceNfseJob::dispatch($r->id)),
+            Tables\Actions\Action::make('emitir_nfse')->label(fn (ServiceOrder $r): string => NfseStatus::requiresNewReference($r->focus_nfse_status) ? 'Emitir nova NFS-e' : 'Emitir NFS-e')->color('success')->visible(fn (ServiceOrder $r): bool => $r->status === 'completed' && NfseStatus::canEmit($r->focus_nfse_status))->requiresConfirmation()->action(fn (ServiceOrder $r) => EmitServiceNfseJob::dispatch($r->id)),
             Tables\Actions\Action::make('consultar_nfse')->label('Consultar NFS-e')->visible(fn (ServiceOrder $r): bool => in_array($r->focus_nfse_status, [NfseStatus::PROCESSING, NfseStatus::SENDING], true))->action(fn (ServiceOrder $r) => ConsultServiceNfseJob::dispatch($r->id)),
             Tables\Actions\Action::make('cancelar_nfse')->label('Cancelar NFS-e')->color('danger')->visible(fn (ServiceOrder $r): bool => NfseStatus::canCancel($r->focus_nfse_status))->requiresConfirmation()->action(fn (ServiceOrder $r) => CancelServiceNfseJob::dispatch($r->id, 'Cancelamento solicitado pelo emissor da ordem de serviço.')),
         ]);

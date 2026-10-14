@@ -6,10 +6,12 @@ use App\Actions\EmitServiceNfseAction;
 use App\Actions\HandleFocusNfseWebhookAction;
 use App\Jobs\ReconcileFocusNfseWebhooksJob;
 use App\Models\Client;
+use App\Models\FiscalDocument;
 use App\Models\FocusNfseWebhookEvent;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderItem;
 use App\Models\User;
+use App\Services\FocusNfseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -339,4 +341,57 @@ test('webhook atrasado não rebaixa nota autorizada para processando', function 
     ])->assertOk();
 
     expect($this->service->refresh()->focus_nfse_status)->toBe('autorizado');
+});
+
+test('emite nova NFS-e com nova referência após cancelamento e preserva o histórico', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfse*' => Http::response(['status' => 'processando_autorizacao'], 202)]);
+    $this->service->update(['focus_nfse_ref' => 'nfse-cancelada', 'focus_nfse_status' => 'cancelado', 'focus_nfse_number' => '55']);
+
+    app(EmitServiceNfseAction::class)->execute($this->service->fresh());
+    $this->service->refresh();
+
+    expect($this->service->focus_nfse_ref)->not->toBe('nfse-cancelada')
+        ->and($this->service->focus_nfse_status)->toBe('processando')
+        ->and($this->service->focus_nfse_number)->toBeNull()
+        ->and(FiscalDocument::where('focus_reference', 'nfse-cancelada')->value('status'))->toBe('cancelado')
+        ->and(FiscalDocument::where('focus_reference', $this->service->focus_nfse_ref)->exists())->toBeTrue();
+});
+
+test('remonta a NFS-e após recusa definitiva da Focus', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfse*' => Http::response(['status' => 'processando_autorizacao'], 202)]);
+    $this->service->update([
+        'focus_nfse_ref' => 'nfse-recusada', 'focus_nfse_status' => 'erro_emissao',
+        'focus_nfse_payload' => ['tomador' => ['razao_social' => 'Nome antigo']],
+        'focus_nfse_error' => ['operation' => 'emissao', 'http_status' => 400, 'message' => 'Empresa não habilitada'],
+    ]);
+
+    app(EmitServiceNfseAction::class)->execute($this->service->fresh());
+
+    $post = collect(Http::recorded())->first(fn (array $record): bool => $record[0]->method() === 'POST')[0];
+    expect($post->url())->toContain('ref=nfse-recusada')
+        ->and($post['tomador']['razao_social'])->toBe('Empresa Tomadora LTDA');
+});
+
+test('normaliza o status retornado no cancelamento da NFS-e', function (): void {
+    $this->service->update(['focus_nfse_ref' => 'nfse-ok', 'focus_nfse_status' => 'autorizado', 'status' => 'billed']);
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfse/nfse-ok' => Http::response(['status' => 'cancelado'], 200)]);
+
+    app(CancelServiceNfseAction::class)->execute($this->service, 'Cancelamento por erro na emissão da nota.');
+
+    expect($this->service->refresh()->focus_nfse_status)->toBe('cancelado')
+        ->and($this->service->status)->toBe('completed');
+});
+
+test('preenche o código IBGE do tomador sem código antes de emitir', function (): void {
+    $this->client->update(['ibge_code' => null, 'city' => 'Magé', 'state' => 'RJ']);
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([
+            ['codigo_municipio' => '3302502', 'nome_municipio' => 'Magé', 'sigla_uf' => 'RJ'],
+        ], 200),
+    ]);
+
+    $payload = app(FocusNfseService::class)->buildPayload($this->service->fresh(), app(FocusNfseService::class)->configurationFor($this->service));
+
+    expect($payload['tomador']['endereco']['codigo_municipio'])->toBe('3302502')
+        ->and($this->client->refresh()->ibge_code)->toBe('3302502');
 });

@@ -3,7 +3,9 @@
 use App\Actions\CancelSaleNfeAction;
 use App\Actions\ConsultSaleNfeAction;
 use App\Actions\EmitSaleNfeAction;
+use App\Jobs\ConsultSaleNfeJob;
 use App\Models\Client;
+use App\Models\FiscalDocument;
 use App\Models\FocusNfeWebhookEvent;
 use App\Models\Product;
 use App\Models\Sale;
@@ -12,6 +14,7 @@ use App\Models\User;
 use App\Services\FocusDanfePreviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
@@ -111,4 +114,138 @@ test('converte CFOP interno em interestadual para destinatário de outra UF', fu
 
     expect($payload['local_destino'])->toBe(2)
         ->and($payload['items'][0]['cfop'])->toBe('6102');
+});
+
+test('normaliza processando_autorizacao da Focus e agenda a consulta da NF-e', function (): void {
+    Queue::fake();
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200),
+        'https://homologacao.focusnfe.com.br/v2/nfe*' => Http::response(['status' => 'processando_autorizacao'], 202),
+    ]);
+
+    app(EmitSaleNfeAction::class)->execute($this->sale);
+
+    expect($this->sale->refresh()->focus_nfe_status)->toBe('processando');
+    Queue::assertPushed(ConsultSaleNfeJob::class);
+});
+
+test('reenvia NF-e rejeitada na mesma referência com os dados atuais', function (): void {
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200),
+        'https://homologacao.focusnfe.com.br/v2/nfe*' => Http::response(['status' => 'processando_autorizacao'], 202),
+    ]);
+    $this->sale->update([
+        'focus_nfe_ref' => 'sale1rejeitada', 'focus_nfe_status' => 'erro_autorizacao',
+        'focus_nfe_payload' => ['nome_destinatario' => 'Nome antigo'],
+    ]);
+    $this->sale->client->update(['name' => 'Cliente Corrigido']);
+
+    app(EmitSaleNfeAction::class)->execute($this->sale->fresh());
+
+    $post = collect(Http::recorded())->first(fn (array $record): bool => $record[0]->method() === 'POST')[0];
+    expect($this->sale->refresh()->focus_nfe_ref)->toBe('sale1rejeitada')
+        ->and($post->url())->toContain('ref=sale1rejeitada')
+        ->and($post['nome_destinatario'])->toBe('Cliente Corrigido');
+});
+
+test('remonta a NF-e após recusa definitiva da Focus em vez de repetir o payload antigo', function (): void {
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200),
+        'https://homologacao.focusnfe.com.br/v2/nfe*' => Http::response(['status' => 'processando_autorizacao'], 202),
+    ]);
+    $this->sale->update([
+        'focus_nfe_ref' => 'sale1recusada', 'focus_nfe_status' => 'erro_emissao',
+        'focus_nfe_payload' => ['nome_destinatario' => 'Nome antigo'],
+        'focus_nfe_error' => ['operation' => 'emissao', 'http_status' => 400, 'message' => 'Empresa não habilitada'],
+    ]);
+
+    app(EmitSaleNfeAction::class)->execute($this->sale->fresh());
+
+    $post = collect(Http::recorded())->first(fn (array $record): bool => $record[0]->method() === 'POST')[0];
+    expect($post->url())->toContain('ref=sale1recusada')
+        ->and($post['nome_destinatario'])->toBe('Cliente Teste');
+});
+
+test('emite nova NF-e com nova referência após cancelamento e preserva o histórico', function (): void {
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200),
+        'https://homologacao.focusnfe.com.br/v2/nfe*' => Http::response(['status' => 'processando_autorizacao'], 202),
+    ]);
+    $this->sale->update([
+        'focus_nfe_ref' => 'sale1cancelada', 'focus_nfe_status' => 'cancelado', 'focus_nfe_number' => '10',
+        'focus_nfe_url' => 'https://example.test/danfe-antiga.pdf',
+    ]);
+
+    app(EmitSaleNfeAction::class)->execute($this->sale->fresh());
+    $this->sale->refresh();
+
+    expect($this->sale->focus_nfe_ref)->not->toBe('sale1cancelada')
+        ->and($this->sale->focus_nfe_number)->toBeNull()
+        ->and($this->sale->focus_nfe_url)->toBeNull()
+        ->and(FiscalDocument::where('focus_reference', 'sale1cancelada')->value('status'))->toBe('cancelado')
+        ->and(FiscalDocument::where('focus_reference', $this->sale->focus_nfe_ref)->value('status'))->toBe('processando');
+});
+
+test('não reenvia NF-e autorizada', function (): void {
+    Http::fake();
+    $this->sale->update(['focus_nfe_ref' => 'sale1ok', 'focus_nfe_status' => 'autorizado']);
+
+    expect(fn () => app(EmitSaleNfeAction::class)->execute($this->sale->fresh()))
+        ->toThrow(RuntimeException::class, 'não pode ser emitida');
+    Http::assertNothingSent();
+});
+
+test('consulta grava o link da DANFE retornado como caminho relativo', function (): void {
+    $this->sale->update(['focus_nfe_ref' => 'sale1danfe', 'focus_nfe_status' => 'processando']);
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfe/sale1danfe' => Http::response([
+        'status' => 'autorizado', 'numero' => '7', 'caminho_danfe' => '/arquivos/danfe.pdf',
+    ], 200)]);
+
+    app(ConsultSaleNfeAction::class)->execute($this->sale);
+
+    expect($this->sale->refresh()->focus_nfe_url)->toBe('https://homologacao.focusnfe.com.br/arquivos/danfe.pdf');
+});
+
+test('converte qualquer CFOP de saída conforme a UF do destinatário', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200)]);
+    $this->sale->saleItems->first()->product->update(['cfop_code' => '5405']);
+    $this->sale->client->update(['state' => 'RJ']);
+    expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh())['items'][0]['cfop'])->toBe('6405');
+
+    $this->sale->saleItems->first()->product->update(['cfop_code' => '6102']);
+    $this->sale->client->update(['state' => 'SP']);
+    expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh())['items'][0]['cfop'])->toBe('5102');
+});
+
+test('usa o horário atual de Brasília na emissão, mesmo para venda de outro dia', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200)]);
+    $this->travelTo(now('America/Sao_Paulo')->setDate(2026, 10, 14)->setTime(22, 30));
+    $this->sale->update(['sale_date' => '2026-10-01']);
+
+    $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh());
+
+    expect($payload['data_emissao'])->toBe('2026-10-14T22:30:00-03:00')
+        ->and($payload['data_entrada_saida'])->toBe('2026-10-14T22:30:00-03:00');
+});
+
+test('usa PIS e COFINS 49 por padrão', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200)]);
+
+    $item = app(FocusDanfePreviewService::class)->buildPayload($this->sale)['items'][0];
+
+    expect($item['pis_situacao_tributaria'])->toBe('49')
+        ->and($item['cofins_situacao_tributaria'])->toBe('49');
+});
+
+test('resolve e salva o código IBGE do destinatário pela tabela de municípios da Focus', function (): void {
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([
+        ['codigo_municipio' => '3550308', 'nome_municipio' => 'São Paulo', 'sigla_uf' => 'SP'],
+    ], 200)]);
+
+    $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale);
+
+    expect($payload['codigo_municipio_destinatario'])->toBe('3550308')
+        ->and($this->sale->client->refresh()->ibge_code)->toBe('3550308');
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'sigla_uf=SP')
+        && str_contains(urldecode($request->url()), 'nome_municipio=São Paulo'));
 });

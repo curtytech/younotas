@@ -15,6 +15,7 @@ class FocusNfseService
     public function __construct(
         protected FocusNfeConfigService $focusNfeConfigService,
         protected FocusApiClient $apiClient,
+        protected FocusMunicipioService $municipioService,
     ) {}
 
     public function configurationFor(ServiceOrder $service): array
@@ -77,6 +78,11 @@ class FocusNfseService
     {
         $service->loadMissing('client', 'items');
         $this->guardRequiredConfiguration($focusConfig);
+
+        if ($service->client) {
+            $this->municipioService->ensureClientIbgeCode($service->client);
+        }
+
         $this->guardRequiredModelData($service);
 
         $client = $service->client;
@@ -92,7 +98,7 @@ class FocusNfseService
         ))->implode('; ');
 
         return [
-            'data_emissao' => now('America/Sao_Paulo')->toIso8601String(),
+            'data_emissao' => now(config('app.timezone'))->toIso8601String(),
             'incentivador_cultural' => (bool) data_get($focusConfig, 'nfse.incentivador_cultural', false),
             'natureza_operacao' => (string) data_get($focusConfig, 'nfse.natureza_operacao', '1'),
             'optante_simples_nacional' => (bool) data_get($focusConfig, 'nfse.optante_simples_nacional', true),

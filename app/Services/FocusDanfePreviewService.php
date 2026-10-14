@@ -15,6 +15,7 @@ class FocusDanfePreviewService
     public function __construct(
         protected FocusNfeConfigService $focusNfeConfigService,
         protected FocusApiClient $apiClient,
+        protected FocusMunicipioService $municipioService,
     ) {}
 
     public function generate(Sale $sale): Response
@@ -45,6 +46,7 @@ class FocusDanfePreviewService
 
         $this->guardRequiredConfiguration($focusConfig);
         $this->guardRequiredModelData($sale);
+        $this->municipioService->ensureClientIbgeCode($sale->client);
 
         $emitente = $this->resolveEmitenteData($sale->user, $focusConfig);
         $destinatario = $this->resolveDestinatarioData($sale->client);
@@ -57,10 +59,10 @@ class FocusDanfePreviewService
 
         return array_filter([
             'natureza_operacao' => (string) ($focusConfig['nfe']['natureza_operacao'] ?? 'VENDA DE MERCADORIA'),
-            'data_emissao' => $sale->sale_date?->copy()->setTime(now()->hour, now()->minute, now()->second)->toIso8601String()
-                ?? now()->toIso8601String(),
-            'data_entrada_saida' => $sale->sale_date?->copy()->endOfDay()->toIso8601String()
-                ?? now()->toIso8601String(),
+            // A SEFAZ valida a data de emissão contra o horário do envio; usar a data da venda
+            // causaria rejeição para vendas de outros dias.
+            'data_emissao' => now(config('app.timezone'))->toIso8601String(),
+            'data_entrada_saida' => now(config('app.timezone'))->toIso8601String(),
             'tipo_documento' => (int) ($focusConfig['nfe']['tipo_documento'] ?? 1),
             'local_destino' => $localDestino,
             'finalidade_emissao' => (int) ($focusConfig['nfe']['finalidade_emissao'] ?? 1),
@@ -116,8 +118,8 @@ class FocusDanfePreviewService
             'valor_total_tributos' => $this->formatDecimal((float) ($saleItem->tax_amount ?? 0), 2),
             'icms_situacao_tributaria' => (string) ($focusConfig['nfe']['icms_situacao_tributaria'] ?? '102'),
             'icms_origem' => (string) ($focusConfig['nfe']['icms_origem'] ?? '0'),
-            'pis_situacao_tributaria' => (string) ($focusConfig['nfe']['pis_situacao_tributaria'] ?? '07'),
-            'cofins_situacao_tributaria' => (string) ($focusConfig['nfe']['cofins_situacao_tributaria'] ?? '07'),
+            'pis_situacao_tributaria' => (string) ($focusConfig['nfe']['pis_situacao_tributaria'] ?? '49'),
+            'cofins_situacao_tributaria' => (string) ($focusConfig['nfe']['cofins_situacao_tributaria'] ?? '49'),
         ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
@@ -133,6 +135,7 @@ class FocusDanfePreviewService
             'numero_emitente' => $focusConfig['nfe']['emitente']['numero'] ?? $user->address_number,
             'bairro_emitente' => $focusConfig['nfe']['emitente']['bairro'] ?? null,
             'municipio_emitente' => $focusConfig['nfe']['emitente']['municipio'] ?? $user->city,
+            'codigo_municipio_emitente' => $this->ibgeCodeOrNull($focusConfig['prestador']['codigo_municipio'] ?? null),
             'uf_emitente' => $focusConfig['nfe']['emitente']['uf'] ?? $user->state,
             'cep_emitente' => $this->onlyDigits((string) ($focusConfig['nfe']['emitente']['cep'] ?? $user->zip_code)),
             'inscricao_estadual_emitente' => $focusConfig['nfe']['emitente']['inscricao_estadual'] ?? $user->inscricao_estatual,
@@ -158,6 +161,7 @@ class FocusDanfePreviewService
             'numero_destinatario' => $client->address_number ?: 'S/N',
             'bairro_destinatario' => $client->neighborhood,
             'municipio_destinatario' => $client->city,
+            'codigo_municipio_destinatario' => $this->ibgeCodeOrNull($client->ibge_code),
             'uf_destinatario' => $client->state,
             'cep_destinatario' => $this->onlyDigits((string) $client->zip_code),
             'pais_destinatario' => $client->country ?: 'Brasil',
@@ -239,6 +243,10 @@ class FocusDanfePreviewService
         return strtoupper($ufEmitente) === strtoupper($ufDestinatario) ? 1 : 2;
     }
 
+    /**
+     * O CFOP de saída começa com 5 em operação dentro do estado e com 6 em operação
+     * interestadual; o restante do código (a natureza da operação) é o mesmo.
+     */
     protected function resolveCfop(string $cfop, int $localDestino): string
     {
         $cfop = $this->onlyDigits($cfop);
@@ -247,15 +255,18 @@ class FocusDanfePreviewService
             return $cfop;
         }
 
-        if ($localDestino === 2 && $cfop === '5102') {
-            return '6102';
-        }
+        return match (true) {
+            $localDestino === 2 && $cfop[0] === '5' => '6'.substr($cfop, 1),
+            $localDestino === 1 && $cfop[0] === '6' => '5'.substr($cfop, 1),
+            default => $cfop,
+        };
+    }
 
-        if ($localDestino === 1 && $cfop === '6102') {
-            return '5102';
-        }
+    protected function ibgeCodeOrNull(mixed $value): ?string
+    {
+        $code = $this->onlyDigits((string) $value);
 
-        return $cfop;
+        return strlen($code) === 7 ? $code : null;
     }
 
     protected function onlyDigits(string $value): string

@@ -35,8 +35,8 @@ class FocusNfeSettingFactory extends Factory
                     'cfop_padrao' => '5102',
                     'icms_origem' => '0',
                     'icms_situacao_tributaria' => '102',
-                    'pis_situacao_tributaria' => '07',
-                    'cofins_situacao_tributaria' => '07',
+                    'pis_situacao_tributaria' => '49',
+                    'cofins_situacao_tributaria' => '49',
                     'emitente' => [
                         'nome' => 'Empresa Teste NF-e',
                         'nome_fantasia' => 'Empresa Teste',

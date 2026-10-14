@@ -29,7 +29,7 @@ class ConsultSaleNfeAction
         $sale->update([
             'focus_nfe_status' => $status,
             'focus_nfe_number' => $response['numero'] ?? $response['numero_nfe'] ?? $sale->focus_nfe_number,
-            'focus_nfe_url' => $response['url_danfe'] ?? $response['url'] ?? $sale->focus_nfe_url,
+            'focus_nfe_url' => $this->focusNfeService->documentUrl($response, $this->focusNfeService->configurationFor($sale)) ?? $sale->focus_nfe_url,
             'focus_nfe_response_secure' => $response,
             'focus_nfe_last_checked_at' => now(),
             'focus_nfe_error' => $status === NfeStatus::AUTHORIZATION_ERROR ? ['response' => $response, 'at' => now()->toIso8601String()] : $sale->focus_nfe_error,

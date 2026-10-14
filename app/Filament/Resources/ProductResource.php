@@ -108,6 +108,16 @@ class ProductResource extends Resource
                         'regex' => 'O NCM deve conter exatamente 8 numeros.',
                     ])
                     ->label('NCM'),
+                Forms\Components\TextInput::make('cfop_code')
+                    ->string()
+                    ->length(4)
+                    ->rule('regex:/^[56]\\d{3}$/')
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? preg_replace('/\D/', '', $state) : null)
+                    ->helperText('CFOP de venda dentro do estado (ex.: 5102). Para clientes de outra UF o sistema troca para 6xxx automaticamente. Vazio usa o CFOP padrão da Configuração Fiscal.')
+                    ->validationMessages([
+                        'regex' => 'O CFOP deve ter 4 números e começar com 5 ou 6.',
+                    ])
+                    ->label('CFOP'),
                 Forms\Components\TextInput::make('cest_code')
                     ->string()
                     ->length(7)

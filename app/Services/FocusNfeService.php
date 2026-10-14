@@ -71,6 +71,21 @@ class FocusNfeService
         return $response->json() ?? [];
     }
 
+    public function documentUrl(array $response, ?array $config = null): ?string
+    {
+        $url = $response['url_danfe'] ?? $response['url'] ?? $response['caminho_danfe'] ?? null;
+
+        if (blank($url)) {
+            return null;
+        }
+
+        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        return rtrim((string) ($config['base_url'] ?? config('services.focus_nfe.base_url')), '/').'/'.ltrim($url, '/');
+    }
+
     protected function throwForFailure(Response $response): void
     {
         if ($response->successful()) {

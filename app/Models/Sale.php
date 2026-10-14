@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FiscalDocumentRecorder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,14 @@ class Sale extends Model
     {
         static::deleting(function (Sale $sale): void {
             $sale->saleItems()->get()->each->delete();
+        });
+
+        static::saved(function (Sale $sale): void {
+            $tracked = ['focus_nfe_ref', 'focus_nfe_status', 'focus_nfe_number', 'focus_nfe_url', 'focus_nfe_last_checked_at', 'focus_nfe_last_webhook_at'];
+
+            if (filled($sale->focus_nfe_ref) && ($sale->wasRecentlyCreated || $sale->wasChanged($tracked))) {
+                app(FiscalDocumentRecorder::class)->recordSale($sale);
+            }
         });
     }
 

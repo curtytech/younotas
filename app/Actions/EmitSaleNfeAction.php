@@ -31,11 +31,26 @@ class EmitSaleNfeAction
             }
 
             $config = $this->focusNfeService->configurationFor($locked);
-            // A Focus reference must be alphanumeric; it is also reused on retries.
-            $reference = $locked->focus_nfe_ref ?: 'sale'.$locked->id.Str::lower(Str::random(8));
-            $payload = $locked->focus_nfe_status === NfeStatus::AUTHORIZATION_ERROR
-                ? $this->focusNfeService->buildPayload($locked, $config)
-                : ($locked->focus_nfe_payload ?: $this->focusNfeService->buildPayload($locked, $config));
+            // A referência Focus deve ser alfanumérica. Ela é mantida em retries e após rejeição,
+            // mas uma nota cancelada ou denegada exige nova referência (a Focus responde already_processed).
+            $newReference = blank($locked->focus_nfe_ref) || NfeStatus::requiresNewReference($locked->focus_nfe_status);
+            $reference = $newReference ? 'sale'.$locked->id.Str::lower(Str::random(8)) : $locked->focus_nfe_ref;
+            // Retry de falha ambígua repete o payload original; nos demais casos a nota é remontada com os dados atuais.
+            $reusePayload = ! $newReference
+                && $locked->focus_nfe_status === NfeStatus::TRANSPORT_ERROR
+                && NfeStatus::isAmbiguousFailure($locked->focus_nfe_error)
+                && filled($locked->focus_nfe_payload);
+            $payload = $reusePayload ? $locked->focus_nfe_payload : $this->focusNfeService->buildPayload($locked, $config);
+
+            if ($newReference) {
+                $locked->fill([
+                    'focus_nfe_number' => null,
+                    'focus_nfe_url' => null,
+                    'focus_nfe_response_secure' => null,
+                    'focus_nfe_last_checked_at' => null,
+                    'focus_nfe_last_webhook_at' => null,
+                ]);
+            }
 
             $locked->update([
                 'focus_nfe_ref' => $reference,
@@ -92,24 +107,9 @@ class EmitSaleNfeAction
         $sale->update([
             'focus_nfe_status' => $status,
             'focus_nfe_number' => $response['numero'] ?? $response['numero_nfe'] ?? $sale->focus_nfe_number,
-            'focus_nfe_url' => $this->resolveDocumentUrl($response, $config) ?? $sale->focus_nfe_url,
+            'focus_nfe_url' => $this->focusNfeService->documentUrl($response, $config) ?? $sale->focus_nfe_url,
             'focus_nfe_response_secure' => $response,
             'focus_nfe_error' => $status === NfeStatus::AUTHORIZATION_ERROR ? ['response' => $response, 'at' => now()->toIso8601String()] : null,
         ]);
-    }
-
-    protected function resolveDocumentUrl(array $response, array $config): ?string
-    {
-        $url = $response['url_danfe'] ?? $response['url'] ?? $response['caminho_danfe'] ?? null;
-
-        if (blank($url)) {
-            return null;
-        }
-
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        return rtrim((string) ($config['base_url'] ?? ''), '/').'/'.ltrim($url, '/');
     }
 }

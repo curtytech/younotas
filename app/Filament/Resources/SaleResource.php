@@ -415,7 +415,8 @@ class SaleResource extends Resource
                     ->url(fn (Sale $record): string => route('sales.danfe-preview', $record))
                     ->openUrlInNewTab(),
                 Tables\Actions\Action::make('emitir_nfe')
-                    ->label('Emitir NF-e')->icon('heroicon-o-paper-airplane')
+                    ->label(fn (Sale $record): string => NfeStatus::requiresNewReference($record->focus_nfe_status) ? 'Emitir nova NF-e' : 'Emitir NF-e')
+                    ->icon('heroicon-o-paper-airplane')
                     ->visible(fn (Sale $record): bool => NfeStatus::canEmit($record->focus_nfe_status))
                     ->requiresConfirmation()
                     ->action(fn (Sale $record): mixed => EmitSaleNfeJob::dispatch($record->id))
