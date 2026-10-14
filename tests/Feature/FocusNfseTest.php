@@ -395,3 +395,19 @@ test('preenche o código IBGE do tomador sem código antes de emitir', function 
     expect($payload['tomador']['endereco']['codigo_municipio'])->toBe('3302502')
         ->and($this->client->refresh()->ibge_code)->toBe('3302502');
 });
+
+test('histórico fiscal separa o RPS do número da NFS-e', function (): void {
+    $this->service->update(['focus_nfse_ref' => 'nfse-rps', 'focus_nfse_status' => 'processando']);
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfse/nfse-rps' => Http::sequence()
+        ->push(['status' => 'processando_autorizacao', 'numero_rps' => '2', 'serie_rps' => '1'], 200)
+        ->push(['status' => 'autorizado', 'numero' => '202600010', 'numero_rps' => '2', 'serie_rps' => '1'], 200)]);
+
+    app(ConsultServiceNfseAction::class)->execute($this->service);
+    $document = FiscalDocument::where('focus_reference', 'nfse-rps')->firstOrFail();
+    expect($document->document_number)->toBeNull()
+        ->and($document->series)->toBe('1')
+        ->and($document->metadata['numero_rps'])->toBe('2');
+
+    app(ConsultServiceNfseAction::class)->execute($this->service->fresh());
+    expect($document->refresh()->document_number)->toBe('202600010');
+});

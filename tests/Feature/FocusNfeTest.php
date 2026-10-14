@@ -249,3 +249,18 @@ test('resolve e salva o código IBGE do destinatário pela tabela de municípios
     Http::assertSent(fn ($request): bool => str_contains($request->url(), 'sigla_uf=SP')
         && str_contains(urldecode($request->url()), 'nome_municipio=São Paulo'));
 });
+
+test('histórico fiscal mostra número, série e chave da NF-e autorizada', function (): void {
+    $this->sale->update(['focus_nfe_ref' => 'sale1serie', 'focus_nfe_status' => 'processando']);
+    Http::fake(['https://homologacao.focusnfe.com.br/v2/nfe/sale1serie' => Http::response([
+        'status' => 'autorizado', 'numero' => '9', 'serie' => '1',
+        'chave_nfe' => 'NFe33261028480405000193550010000000091261896629',
+    ], 200)]);
+
+    app(ConsultSaleNfeAction::class)->execute($this->sale);
+
+    $document = FiscalDocument::where('focus_reference', 'sale1serie')->firstOrFail();
+    expect($document->document_number)->toBe('9')
+        ->and($document->series)->toBe('1')
+        ->and($document->access_key)->toBe('33261028480405000193550010000000091261896629');
+});

@@ -78,6 +78,7 @@ class FiscalDocumentResource extends Resource
                         'autorizado' => 'success',
                         'processando', 'enviando' => 'warning',
                         'cancelado' => 'gray',
+                        'denegado' => 'danger',
                         'erro_autorizacao', 'erro_emissao' => 'danger',
                         default => 'gray',
                     })
@@ -85,6 +86,7 @@ class FiscalDocumentResource extends Resource
                         'autorizado' => 'Autorizada',
                         'processando', 'enviando' => 'Processando',
                         'cancelado' => 'Cancelada',
+                        'denegado' => 'Denegada',
                         'erro_autorizacao' => 'Erro de autorização',
                         'erro_emissao' => 'Erro de envio',
                         default => 'Não emitida',
@@ -96,6 +98,16 @@ class FiscalDocumentResource extends Resource
                 Tables\Columns\TextColumn::make('series')
                     ->placeholder('—')
                     ->label('Série'),
+                Tables\Columns\TextColumn::make('metadata.numero_rps')
+                    ->placeholder('—')
+                    ->toggleable()
+                    ->label('RPS'),
+                Tables\Columns\TextColumn::make('access_key')
+                    ->copyable()
+                    ->copyMessage('Chave copiada')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->label('Chave de acesso'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('BRL')
                     ->placeholder('—')
