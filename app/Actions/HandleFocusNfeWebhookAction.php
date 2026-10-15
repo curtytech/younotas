@@ -57,7 +57,7 @@ class HandleFocusNfeWebhookAction
             return $url;
         }
 
-        $baseUrl = data_get($sale->user?->focusNfeSetting?->settings, 'base_url', config('services.focus_nfe.base_url'));
+        $baseUrl = app(\App\Services\FocusNfeConfigService::class)->baseUrlFor($sale->user);
 
         return rtrim((string) $baseUrl, '/').'/'.ltrim($url, '/');
     }

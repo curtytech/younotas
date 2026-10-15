@@ -4,8 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\FocusNfeSettingResource\Pages;
 use App\Models\FocusNfeSetting;
+use App\Services\FocusNfeConfigService;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -61,20 +63,33 @@ class FocusNfeSettingResource extends Resource
                 Forms\Components\Section::make('API Focus')
                     ->description('Credenciais e ambiente usados para emitir documentos fiscais.')
                     ->schema([
-                        Forms\Components\TextInput::make('settings.api_key')
-                            ->required()
-                            ->string()
-                            ->maxLength(255)
-                            ->label('Token'),
-                        Forms\Components\Select::make('settings.base_url')
+                        Forms\Components\Select::make('settings.environment')
                             ->required()
                             ->options([
-                                'https://homologacao.focusnfe.com.br' => 'Homologação',
-                                'https://api.focusnfe.com.br' => 'Produção',
+                                'homologacao' => 'Homologação (testes, sem valor fiscal)',
+                                'producao' => 'Produção (notas com valor fiscal)',
                             ])
-                            ->default('https://homologacao.focusnfe.com.br')
+                            ->default('homologacao')
                             ->native(false)
-                            ->label('Ambiente'),
+                            ->live()
+                            ->helperText('Define qual token e qual URL da Focus são usados. Para trocar de ambiente basta mudar aqui.')
+                            ->label('Ambiente em uso')
+                            ->columnSpanFull(),
+                        Forms\Components\Placeholder::make('producao_aviso')
+                            ->hiddenLabel()
+                            ->visible(fn (Get $get): bool => $get('settings.environment') === 'producao')
+                            ->content(new HtmlString('<div class="rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">Ambiente de <strong>produção</strong>: as notas emitidas têm valor fiscal e usam a numeração real da empresa.</div>'))
+                            ->columnSpanFull(),
+                        Forms\Components\TextInput::make('settings.api_keys.homologacao')
+                            ->required(fn (Get $get): bool => $get('settings.environment') !== 'producao')
+                            ->string()
+                            ->maxLength(255)
+                            ->label('Token de homologação'),
+                        Forms\Components\TextInput::make('settings.api_keys.producao')
+                            ->required(fn (Get $get): bool => $get('settings.environment') === 'producao')
+                            ->string()
+                            ->maxLength(255)
+                            ->label('Token de produção'),
                     ])
                     ->columns(2)
                     ->collapsible(),
@@ -311,8 +326,8 @@ class FocusNfeSettingResource extends Resource
                     ->visible(auth()->user()->role === 'admin'),
                 Tables\Columns\TextColumn::make('settings.prestador.cnpj')
                     ->label('CNPJ'),
-                Tables\Columns\TextColumn::make('settings.base_url')
-                    ->formatStateUsing(fn (?string $state): string => $state === 'https://api.focusnfe.com.br' ? 'Produção' : 'Homologação')
+                Tables\Columns\TextColumn::make('settings.environment')
+                    ->getStateUsing(fn ($record): string => FocusNfeConfigService::normalizeSettings($record->settings ?? [])['environment'] === 'producao' ? 'Produção' : 'Homologação')
                     ->label('Ambiente'),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime('d/m/Y H:i')

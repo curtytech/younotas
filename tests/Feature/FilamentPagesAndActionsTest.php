@@ -113,7 +113,7 @@ test('formularios principais carregam seus campos essenciais', function (): void
         [CreateServiceOrder::class, 'client_id'],
         [CreateSale::class, 'sale_date'],
         [CreateStockMovement::class, 'product_id'],
-        [CreateFocusNfeSetting::class, 'settings.api_key'],
+        [CreateFocusNfeSetting::class, 'settings.api_keys.homologacao'],
     ] as [$page, $field]) {
         Livewire::test($page)
             ->assertOk()

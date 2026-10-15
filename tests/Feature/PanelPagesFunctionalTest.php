@@ -251,7 +251,7 @@ test('todos os formulários expõem os campos principais e os componentes repet�
             'previous_stock', 'current_stock', 'unit_cost', 'moved_at', 'notes',
         ],
         CreateFocusNfeSetting::class => [
-            'user_id', 'settings.api_key', 'settings.base_url', 'settings.prestador.cnpj',
+            'user_id', 'settings.environment', 'settings.api_keys.homologacao', 'settings.api_keys.producao', 'settings.prestador.cnpj',
             'settings.prestador.inscricao_municipal', 'settings.prestador.codigo_municipio',
             'settings.nfse.natureza_operacao', 'settings.nfse.incentivador_cultural',
             'settings.nfse.optante_simples_nacional', 'settings.nfe.emitente.nome',
@@ -409,10 +409,7 @@ test('selects carregam somente opções válidas para a empresa atual', function
 
     expect($hasOption($adminUserOptions, $this->enterprise->id))->toBeTrue()
         ->and($hasOption($adminUserOptions, $this->otherEnterprise->id))->toBeTrue()
-        ->and($settingFields['settings.base_url']->getOptions())->toHaveKeys([
-            'https://homologacao.focusnfe.com.br',
-            'https://api.focusnfe.com.br',
-        ])
+        ->and($settingFields['settings.environment']->getOptions())->toHaveKeys(['homologacao', 'producao'])
         ->and($settingFields['settings.nfe.emitente.regime_tributario']->getOptions())->toHaveKeys(['1', '2', '3'])
         ->and($userFields['role']->getOptions())->toHaveKeys(['admin', 'enterprise']);
 
