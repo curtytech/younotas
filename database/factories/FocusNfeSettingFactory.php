@@ -16,9 +16,12 @@ class FocusNfeSettingFactory extends Factory
         return [
             'user_id' => User::factory(),
             'settings' => [
-                'api_key' => (string) config('services.focus_nfe.api_key', ''),
+                'environment' => 'homologacao',
+                'api_keys' => [
+                    'homologacao' => (string) config('services.focus_nfe.api_key', ''),
+                    'producao' => '',
+                ],
                 'api_password' => (string) config('services.focus_nfe.api_password', ''),
-                'base_url' => 'https://homologacao.focusnfe.com.br',
                 'prestador' => [
                     'cnpj' => '04252011000110',
                     'inscricao_municipal' => '12345678',

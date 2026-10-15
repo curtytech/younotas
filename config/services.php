@@ -40,6 +40,12 @@ return [
         'api_password' => env('FOCUS_NFE_API_PASSWORD', ''),
         'webhook_secret' => env('FOCUS_NFE_WEBHOOK_SECRET'),
         'base_url' => env('FOCUS_NFE_BASE_URL', 'https://homologacao.focusnfe.com.br'),
+        // Opcional: homologacao|producao escolhe o token e a URL abaixo (substitui api_key/base_url).
+        'environment' => env('FOCUS_NFE_ENVIRONMENT'),
+        'api_keys' => [
+            'homologacao' => env('FOCUS_NFE_API_KEY_HOMOLOGACAO'),
+            'producao' => env('FOCUS_NFE_API_KEY_PRODUCAO'),
+        ],
         'rate_limit' => [
             'max_attempts' => (int) env('FOCUS_NFE_RATE_LIMIT_MAX_ATTEMPTS', 300),
             'decay_seconds' => (int) env('FOCUS_NFE_RATE_LIMIT_DECAY_SECONDS', 60),

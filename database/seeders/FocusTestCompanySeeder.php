@@ -38,9 +38,12 @@ class FocusTestCompanySeeder extends Seeder
         FocusNfeSetting::updateOrCreate(
             ['user_id' => $user->id],
             ['settings' => [
-                'api_key' => $apiKey,
+                'environment' => 'homologacao',
+                'api_keys' => [
+                    'homologacao' => (string) (config('services.focus_nfe.api_keys.homologacao') ?: $apiKey),
+                    'producao' => (string) config('services.focus_nfe.api_keys.producao'),
+                ],
                 'api_password' => (string) config('services.focus_nfe.api_password', ''),
-                'base_url' => (string) config('services.focus_nfe.base_url', 'https://homologacao.focusnfe.com.br'),
                 'prestador' => [
                     'cnpj' => '28480405000193',
                     'inscricao_municipal' => '1005235',

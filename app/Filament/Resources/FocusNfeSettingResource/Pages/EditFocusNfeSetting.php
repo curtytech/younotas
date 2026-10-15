@@ -3,12 +3,20 @@
 namespace App\Filament\Resources\FocusNfeSettingResource\Pages;
 
 use App\Filament\Resources\FocusNfeSettingResource;
+use App\Services\FocusNfeConfigService;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
 class EditFocusNfeSetting extends EditRecord
 {
     protected static string $resource = FocusNfeSettingResource::class;
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['settings'] = FocusNfeConfigService::normalizeSettings($data['settings'] ?? []);
+
+        return $data;
+    }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
