@@ -23,6 +23,7 @@ class Client extends Model
         'address_complement',
         'neighborhood',
         'city',
+        'ibge_code',
         'state',
         'zip_code',
         'country',
@@ -38,13 +39,14 @@ class Client extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function serviceOrders(): HasMany
+    {
+        return $this->hasMany(ServiceOrder::class);
+    }
+
     public function sales(): HasMany
     {
         return $this->hasMany(Sale::class);
     }
 
-    public function services(): HasMany
-    {
-        return $this->hasMany(Service::class);
-    }
 }

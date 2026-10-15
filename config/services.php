@@ -38,7 +38,15 @@ return [
     'focus_nfe' => [
         'api_key' => env('FOCUS_NFE_API_KEY'),
         'api_password' => env('FOCUS_NFE_API_PASSWORD', ''),
+        'webhook_secret' => env('FOCUS_NFE_WEBHOOK_SECRET'),
         'base_url' => env('FOCUS_NFE_BASE_URL', 'https://homologacao.focusnfe.com.br'),
+        'rate_limit' => [
+            'max_attempts' => (int) env('FOCUS_NFE_RATE_LIMIT_MAX_ATTEMPTS', 300),
+            'decay_seconds' => (int) env('FOCUS_NFE_RATE_LIMIT_DECAY_SECONDS', 60),
+        ],
+        'retries' => [
+            'attempts' => (int) env('FOCUS_NFE_RETRIES', 1),
+        ],
         'prestador' => [
             'cnpj' => env('FOCUS_NFE_PRESTADOR_CNPJ'),
             'inscricao_municipal' => env('FOCUS_NFE_PRESTADOR_INSCRICAO_MUNICIPAL'),
@@ -62,8 +70,8 @@ return [
             'codigo_ncm_padrao' => env('FOCUS_NFE_NFE_CODIGO_NCM_PADRAO'),
             'icms_origem' => env('FOCUS_NFE_NFE_ICMS_ORIGEM', '0'),
             'icms_situacao_tributaria' => env('FOCUS_NFE_NFE_ICMS_SITUACAO_TRIBUTARIA', '102'),
-            'pis_situacao_tributaria' => env('FOCUS_NFE_NFE_PIS_SITUACAO_TRIBUTARIA', '07'),
-            'cofins_situacao_tributaria' => env('FOCUS_NFE_NFE_COFINS_SITUACAO_TRIBUTARIA', '07'),
+            'pis_situacao_tributaria' => env('FOCUS_NFE_NFE_PIS_SITUACAO_TRIBUTARIA', '49'),
+            'cofins_situacao_tributaria' => env('FOCUS_NFE_NFE_COFINS_SITUACAO_TRIBUTARIA', '49'),
             'valor_frete' => env('FOCUS_NFE_NFE_VALOR_FRETE', 0),
             'valor_seguro' => env('FOCUS_NFE_NFE_VALOR_SEGURO', 0),
             'valor_outras_despesas' => env('FOCUS_NFE_NFE_VALOR_OUTRAS_DESPESAS', 0),

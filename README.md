@@ -21,6 +21,19 @@ Laravel is a web application framework with expressive, elegant syntax. We belie
 
 Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
+## Changelog
+
+### [0.1.0] - 2026-08-02
+
+- Adicionado armazenamento persistente para documentos fiscais.
+- Adicionada importação de NF-e por backups mensais da Focus.
+- Adicionada importação individual de NFS-e por referência.
+- Criados jobs assíncronos e ações no Histórico Fiscal para importações.
+- Criado cliente Focus centralizado com autenticação, rate limit e tratamento de `429`.
+- Adicionado backfill de documentos existentes via `fiscal:backfill`.
+- Corrigidos factories, seeders, credenciais de teste e depreciações do PDO.
+- Adicionados testes para persistência, importação, idempotência e isolamento.
+
 ## Learning Laravel
 
 Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.

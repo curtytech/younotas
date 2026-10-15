@@ -36,6 +36,8 @@ class Product extends Model
         'name',
         'description',
         'ncm_code',
+        'cst_code',
+        'cfop_code',
         'cest_code',
         'gtin',
         'unit',

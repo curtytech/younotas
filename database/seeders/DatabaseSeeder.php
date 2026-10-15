@@ -19,7 +19,17 @@ class DatabaseSeeder extends Seeder
 
         User::firstOrCreate(
             ['email' => 'test@example.com'],
-            User::factory()->raw(['name' => 'Test User']),
+            [
+                'name' => 'Test User',
+                'email_verified_at' => now(),
+                'password' => 'password',
+                'role' => 'enterprise',
+            ],
         );
+
+        $this->call(NfeTestSeeder::class);
+        $this->call(FocusTestCompanySeeder::class);
+        $this->call(AllTablesSeeder::class);
+        $this->call(FiscalDocumentSeeder::class);
     }
 }

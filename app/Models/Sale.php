@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FiscalDocumentRecorder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,14 @@ class Sale extends Model
         static::deleting(function (Sale $sale): void {
             $sale->saleItems()->get()->each->delete();
         });
+
+        static::saved(function (Sale $sale): void {
+            $tracked = ['focus_nfe_ref', 'focus_nfe_status', 'focus_nfe_number', 'focus_nfe_url', 'focus_nfe_last_checked_at', 'focus_nfe_last_webhook_at'];
+
+            if (filled($sale->focus_nfe_ref) && ($sale->wasRecentlyCreated || $sale->wasChanged($tracked))) {
+                app(FiscalDocumentRecorder::class)->recordSale($sale);
+            }
+        });
     }
 
     protected $fillable = [
@@ -26,6 +35,17 @@ class Sale extends Model
         'status',
         'payment_status',
         'issue_invoice',
+        'focus_nfe_ref',
+        'focus_nfe_status',
+        'focus_nfe_number',
+        'focus_nfe_url',
+        'focus_nfe_response_secure',
+        'focus_nfe_payload',
+        'focus_nfe_error',
+        'focus_nfe_attempts',
+        'focus_nfe_last_sent_at',
+        'focus_nfe_last_checked_at',
+        'focus_nfe_last_webhook_at',
         'subtotal_amount',
         'discount_amount',
         'tax_amount',
@@ -36,6 +56,12 @@ class Sale extends Model
     protected $casts = [
         'sale_date' => 'date',
         'issue_invoice' => 'boolean',
+        'focus_nfe_response_secure' => 'encrypted:array',
+        'focus_nfe_payload' => 'encrypted:array',
+        'focus_nfe_error' => 'encrypted:array',
+        'focus_nfe_last_sent_at' => 'datetime',
+        'focus_nfe_last_checked_at' => 'datetime',
+        'focus_nfe_last_webhook_at' => 'datetime',
         'subtotal_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
