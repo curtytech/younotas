@@ -42,9 +42,13 @@ As páginas oficiais consultadas não publicam um número universal de requisiç
 
 Todas as chamadas de saída para a Focus devem passar por `App\Services\FocusApiClient` (`get`, `post`, `delete`, `download`). Ele centraliza:
 
-- autenticação HTTP Basic, timeout e `Accept: application/json`;
-- rate limit por token/empresa, ambiente e operação, via `RateLimiter` (Redis em produção);
-- retry configurável de respostas `429` (respeitando `Retry-After`), `408` e `5xx`, com backoff;
+- autenticação HTTP Basic com senha vazia e token obrigatório da conexão, sem fallback para token global; hosts HTTPS de homologação/produção validados e redirects desabilitados;
+- timeout e `Accept: application/json`, com rejeição de JSON inválido por `FocusProtocolException` sanitizada (a emissão pode ter sido processada);
+- rate limit por token/empresa, ambiente e operação em cada tentativa, via `RateLimiter` (Redis em produção), inclusive downloads;
+- retry configurável somente de respostas transitórias (`429`, `408` e `5xx`) e transporte em operações seguras: consultas e emissões com referência preservada;
+- `Retry-After` inteiro ou data HTTP preservado; esperas acima do limite local e 429 esgotados lançam `FocusRateLimitedException::retryAfterSeconds` para reagendamento pela fila;
+- pausas exigidas pelo provedor são compartilhadas pelo cache por token, ambiente e operação, impedindo novas chamadas locais antes do prazo;
+- downloads possuem política própria; URLs externas assinadas usam HTTPS sem autenticação Focus e sem redirects; mensagens de erro não incluem corpo fiscal nem URL assinada;
 - chave de rate limit derivada do host do `base_url`, do hash do token e do segmento da rota (`nfe`, `nfse`, `backups`).
 
 `FocusNfeService`, `FocusNfseService`, `FocusDanfePreviewService`, `FocusNfeBackupService` e `FocusNfseImportService` usam o cliente. Não adicionar `Http::get/post/delete` diretos para a Focus fora dele.
@@ -53,6 +57,8 @@ Configuração via env:
 
 - `FOCUS_NFE_RATE_LIMIT_MAX_ATTEMPTS` (padrão 300) e `FOCUS_NFE_RATE_LIMIT_DECAY_SECONDS` (padrão 60);
 - `FOCUS_NFE_RETRIES` (padrão 1; os retries de longo prazo continuam a cargo dos jobs).
+- `FOCUS_NFE_MAX_INLINE_WAIT_SECONDS` (padrão 5), `FOCUS_NFE_CONNECT_TIMEOUT` (5) e `FOCUS_NFE_TIMEOUT` (30);
+- `FOCUS_NFE_DOWNLOAD_ATTEMPTS` (2), `FOCUS_NFE_DOWNLOAD_CONNECT_TIMEOUT` (5) e `FOCUS_NFE_DOWNLOAD_TIMEOUT` (120).
 
 ### Situação atual e restrições remanescentes
 
