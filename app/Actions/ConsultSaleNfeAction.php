@@ -2,38 +2,27 @@
 
 namespace App\Actions;
 
+use App\Models\FiscalDocument;
 use App\Models\Sale;
+use App\Services\FiscalDocumentWorkflow;
 use App\Services\FocusNfeService;
-use App\Support\NfeStatus;
 use Throwable;
 
 class ConsultSaleNfeAction
 {
-    public function __construct(protected FocusNfeService $focusNfeService) {}
+    public function __construct(protected FocusNfeService $service, protected FiscalDocumentWorkflow $workflow) {}
 
-    public function execute(Sale $sale): array
+    public function execute(Sale|FiscalDocument $sale): array
     {
+        $document = $this->workflow->resolve($sale);
+        app(\App\Services\FiscalEmissionPreparation::class)->authorize($document->company_id, auth()->id());
         try {
-            $response = $this->focusNfeService->consult($sale);
+            $response = $this->service->consult($document);
         } catch (Throwable $exception) {
-            $sale->update(['focus_nfe_last_checked_at' => now(), 'focus_nfe_error' => [
-                'operation' => 'consulta', 'message' => $exception->getMessage(), 'exception' => $exception::class,
-                'at' => now()->toIso8601String(),
-            ]]);
+            $this->workflow->recordFailure($document, $exception, 'consulta');
             throw $exception;
         }
-
-        $sale->refresh();
-        $incoming = NfeStatus::normalize($response['status'] ?? null);
-        $status = NfeStatus::shouldReplace($sale->focus_nfe_status, $incoming) ? $incoming : $sale->focus_nfe_status;
-        $sale->update([
-            'focus_nfe_status' => $status,
-            'focus_nfe_number' => $response['numero'] ?? $response['numero_nfe'] ?? $sale->focus_nfe_number,
-            'focus_nfe_url' => $this->focusNfeService->documentUrl($response, $this->focusNfeService->configurationFor($sale)) ?? $sale->focus_nfe_url,
-            'focus_nfe_response_secure' => $response,
-            'focus_nfe_last_checked_at' => now(),
-            'focus_nfe_error' => $status === NfeStatus::AUTHORIZATION_ERROR ? ['response' => $response, 'at' => now()->toIso8601String()] : $sale->focus_nfe_error,
-        ]);
+        $this->workflow->applyResponse($document, $response, 'consulta');
 
         return $response;
     }

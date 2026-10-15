@@ -40,9 +40,8 @@ it('usa o token e a URL do ambiente selecionado', function () {
 });
 
 it('nunca usa o token de homologação em produção quando o de produção está vazio', function () {
-    $config = focusConfigFor($this->user, ['environment' => 'producao', 'api_keys' => ['homologacao' => 'tok-hml', 'producao' => '']]);
-
-    expect($config['api_key'])->toBeEmpty()->and($config['base_url'])->toBe(PROD_URL);
+    expect(fn () => focusConfigFor($this->user, ['environment' => 'producao', 'api_keys' => ['homologacao' => 'tok-hml', 'producao' => '']]))
+        ->toThrow(RuntimeException::class, 'sem token próprio');
 });
 
 it('mantém configurações antigas com um token e URL', function () {
@@ -51,12 +50,11 @@ it('mantém configurações antigas com um token e URL', function () {
     expect($config['api_key'])->toBe('tok-antigo')->and($config['base_url'])->toBe(PROD_URL);
 });
 
-it('usa o ambiente definido no .env quando o usuário não tem configuração', function () {
+it('recusa emissão sem credenciais próprias mesmo quando existe configuração fiscal global', function () {
     config(['services.focus_nfe.environment' => 'producao', 'services.focus_nfe.api_keys' => ['homologacao' => 'env-hml', 'producao' => 'env-prod']]);
 
-    $config = app(FocusNfeConfigService::class)->forUser($this->user);
-
-    expect($config['api_key'])->toBe('env-prod')->and($config['base_url'])->toBe(PROD_URL);
+    expect(fn () => app(FocusNfeConfigService::class)->forUser($this->user))
+        ->toThrow(RuntimeException::class, 'sem token próprio');
 });
 
 it('a configuração do usuário substitui as credenciais do .env por inteiro', function () {
@@ -67,7 +65,7 @@ it('a configuração do usuário substitui as credenciais do .env por inteiro', 
     expect($config['api_key'])->toBe('user-hml')->and($config['base_url'])->toBe(HML_URL);
 });
 
-it('converte o formato antigo ao abrir a tela de edição e salva o novo', function () {
+it('migra as credenciais legadas para conexões e mantém os campos de token vazios na edição', function () {
     $admin = User::factory()->create(['role' => 'admin']);
     $setting = FocusNfeSetting::factory()->create(['user_id' => $this->user->id]);
     $legacy = collect($setting->settings)->except(['environment', 'api_keys'])->all();
@@ -76,7 +74,7 @@ it('converte o formato antigo ao abrir a tela de edição e salva o novo', funct
     $this->actingAs($admin);
 
     Livewire::test(EditFocusNfeSetting::class, ['record' => $setting->getRouteKey()])
-        ->assertFormSet(['settings.environment' => 'producao', 'settings.api_keys.producao' => 'tok-antigo'])
+        ->assertFormSet(['settings.environment' => 'producao', 'settings.api_keys.producao' => null, 'settings.api_keys.homologacao' => null])
         ->fillForm(['settings.environment' => 'homologacao', 'settings.api_keys.homologacao' => 'tok-hml', 'settings.nfse.natureza_operacao' => '1', 'settings.nfe.local_destino' => 1])
         ->call('save')
         ->assertHasNoFormErrors();
@@ -84,8 +82,10 @@ it('converte o formato antigo ao abrir a tela de edição e salva o novo', funct
     $saved = $setting->fresh()->settings;
 
     expect($saved['environment'])->toBe('homologacao')
-        ->and($saved['api_keys'])->toMatchArray(['homologacao' => 'tok-hml', 'producao' => 'tok-antigo'])
-        ->and($saved)->not->toHaveKeys(['api_key', 'base_url']);
+        ->and($saved)->not->toHaveKeys(['api_key', 'api_keys', 'api_password', 'base_url']);
+    $connections = $setting->company->connections()->get()->keyBy('environment');
+    expect($connections['homologacao']->api_key)->toBe('tok-hml')
+        ->and($connections['producao']->api_key)->toBe('tok-antigo');
 });
 
 it('exige o token do ambiente selecionado', function () {

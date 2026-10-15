@@ -3,8 +3,10 @@
 namespace App\Jobs;
 
 use App\Actions\ConsultServiceNfseAction;
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
-use App\Support\NfseStatus;
+use App\Services\FiscalDocumentWorkflow;
+use App\Services\FiscalEmissionPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -19,47 +21,42 @@ class ConsultServiceNfseJob implements ShouldBeUnique, ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 10;
-
     public array $backoff = [60, 120, 300, 600];
-
     public int $uniqueFor = 7200;
+    public int $documentId;
+    public ?int $actorId;
 
-    public function __construct(public int $serviceId) {}
+    public function __construct(public int $serviceId, ?int $documentId = null)
+    {
+        $this->documentId = $documentId ?? app(FiscalDocumentWorkflow::class)->resolve(ServiceOrder::findOrFail($serviceId))->id;
+        $this->actorId = auth()->id();
+        app(FiscalEmissionPreparation::class)->authorize(FiscalDocument::findOrFail($this->documentId)->company_id, $this->actorId);
+    }
 
     public function uniqueId(): string
     {
-        return (string) $this->serviceId;
+        return 'document:'.$this->documentId;
     }
 
     public function middleware(): array
     {
-        return [(new WithoutOverlapping('focus-nfse-consult:'.$this->serviceId))->releaseAfter(60)->expireAfter(7200)];
+        return [(new WithoutOverlapping('fiscal-consult:'.$this->documentId))->releaseAfter(60)->expireAfter(180)];
     }
 
     public function handle(ConsultServiceNfseAction $action): void
     {
-        $service = ServiceOrder::findOrFail($this->serviceId);
-        $action->execute($service);
-        $service->refresh();
-
-        if ($service->focus_nfse_status === NfseStatus::PROCESSING) {
+        $document = FiscalDocument::findOrFail($this->documentId);
+        app(FiscalEmissionPreparation::class)->authorize($document->company_id, $this->actorId);
+        $action->execute($document);
+        if (FiscalDocument::find($this->documentId)?->next_check_at) {
             $this->release(300);
         }
     }
 
     public function failed(Throwable $exception): void
     {
-        $service = ServiceOrder::find($this->serviceId);
-
-        if ($service) {
-            $service->update([
-                'focus_nfse_error' => [
-                    'operation' => 'consulta',
-                    'message' => 'Esgotadas as tentativas de consulta: '.$exception->getMessage(),
-                    'exception' => $exception::class,
-                    'at' => now()->toIso8601String(),
-                ],
-            ]);
+        if ($document = FiscalDocument::find($this->documentId)) {
+            app(FiscalDocumentWorkflow::class)->recordFailure($document, $exception, 'consulta');
         }
     }
 }

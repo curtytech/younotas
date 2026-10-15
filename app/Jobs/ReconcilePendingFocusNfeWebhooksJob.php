@@ -26,7 +26,7 @@ class ReconcilePendingFocusNfeWebhooksJob implements ShouldBeUnique, ShouldQueue
         FocusNfeWebhookEvent::query()
             ->whereNull('processed_at')
             ->whereNotNull('reference')
-            ->orderBy('id')
+            ->orderBy('updated_at')->orderBy('id')
             ->limit(100)
             ->pluck('reference')
             ->unique()

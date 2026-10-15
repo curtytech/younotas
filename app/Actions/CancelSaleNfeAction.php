@@ -2,7 +2,9 @@
 
 namespace App\Actions;
 
+use App\Models\FiscalDocument;
 use App\Models\Sale;
+use App\Services\FiscalDocumentWorkflow;
 use App\Services\FocusNfeService;
 use App\Support\NfeStatus;
 use RuntimeException;
@@ -10,31 +12,22 @@ use Throwable;
 
 class CancelSaleNfeAction
 {
-    public function __construct(protected FocusNfeService $focusNfeService) {}
+    public function __construct(protected FocusNfeService $service, protected FiscalDocumentWorkflow $workflow) {}
 
-    public function execute(Sale $sale, string $justification): array
+    public function execute(Sale|FiscalDocument $sale, string $justification): array
     {
-        $sale->refresh();
-        if (! NfeStatus::canCancel($sale->focus_nfe_status)) {
-            throw new RuntimeException('Apenas NF-e autorizada pode ser cancelada.');
+        $document = $this->workflow->resolve($sale);
+        app(\App\Services\FiscalEmissionPreparation::class)->authorize($document->company_id, auth()->id());
+        if (! NfeStatus::canCancel($document->status)) {
+            throw new RuntimeException('Apenas nota autorizada pode ser cancelada.');
         }
-
         try {
-            $response = $this->focusNfeService->cancel($sale, $justification);
+            $response = $this->service->cancel($document, $justification);
         } catch (Throwable $exception) {
-            $sale->update(['focus_nfe_error' => [
-                'operation' => 'cancelamento', 'message' => $exception->getMessage(), 'exception' => $exception::class,
-                'at' => now()->toIso8601String(),
-            ]]);
+            $this->workflow->recordFailure($document, $exception, 'cancelamento');
             throw $exception;
         }
-
-        $status = NfeStatus::normalize($response['status'] ?? NfeStatus::CANCELED);
-        $sale->update([
-            'focus_nfe_status' => $status,
-            'focus_nfe_response_secure' => $response,
-            'focus_nfe_error' => $status === NfeStatus::CANCELLATION_ERROR ? ['response' => $response, 'at' => now()->toIso8601String()] : null,
-        ]);
+        $this->workflow->applyResponse($document, $response, 'cancelamento');
 
         return $response;
     }

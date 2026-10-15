@@ -84,6 +84,13 @@ beforeEach(function (): void {
         'cnae_code' => '6201501',
         'iss_aliquot' => 5.00,
     ]);
+    $config = app(\App\Services\FocusNfeConfigService::class)->forUser($this->user);
+    $this->service->forceFill([
+        'focus_nfse_connection_id' => $config['fiscal_connection_id'],
+        'focus_nfse_environment' => $config['environment'],
+        'focus_nfse_configuration_snapshot' => \App\Services\FiscalEmissionPreparation::snapshot($config),
+    ])->save();
+    \Illuminate\Support\Facades\Queue::fake([\App\Jobs\ConsultServiceNfseJob::class]);
 });
 
 test('pode emitir nfse via focus nfe', function (): void {
@@ -178,10 +185,9 @@ test('pode receber webhook de atualizacao de nfse da focus nfe', function (): vo
 
     $response = $this->postJson('/api/webhooks/focus-nfse?token=webhook-test-secret', $payload);
 
-    $response->assertStatus(200);
+    $response->assertStatus(202);
     $response->assertJson([
         'success' => true,
-        'status' => 'autorizado',
     ]);
 
     $this->service->refresh();
@@ -197,7 +203,7 @@ test('normaliza o status processando_autorizacao recebido no webhook de nfse', f
         'ref' => 'ref-webhook-processing',
         'status' => 'processando_autorizacao',
         'numero_rps' => '10',
-    ])->assertOk()->assertJson(['status' => 'processando']);
+    ])->assertStatus(202)->assertJson(['success' => true]);
 
     expect($this->service->refresh()->focus_nfse_status)->toBe('processando')
         ->and($this->service->focus_nfse_last_webhook_at)->not->toBeNull();
@@ -338,7 +344,7 @@ test('webhook atrasado não rebaixa nota autorizada para processando', function 
     $this->postJson('/api/webhooks/focus-nfse?token=webhook-test-secret', [
         'ref' => 'ref-status-final',
         'status' => 'processando',
-    ])->assertOk();
+    ])->assertStatus(202);
 
     expect($this->service->refresh()->focus_nfse_status)->toBe('autorizado');
 });
@@ -379,7 +385,7 @@ test('normaliza o status retornado no cancelamento da NFS-e', function (): void 
     app(CancelServiceNfseAction::class)->execute($this->service, 'Cancelamento por erro na emissão da nota.');
 
     expect($this->service->refresh()->focus_nfse_status)->toBe('cancelado')
-        ->and($this->service->status)->toBe('completed');
+        ->and($this->service->status)->toBe('billed');
 });
 
 test('preenche o código IBGE do tomador sem código antes de emitir', function (): void {
