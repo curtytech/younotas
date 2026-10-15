@@ -11,6 +11,7 @@ use App\Jobs\EmitSaleNfeJob;
 use App\Jobs\EmitServiceNfseJob;
 use App\Models\FiscalDocument;
 use App\Models\Sale;
+use App\Services\FiscalIssueDiagnosis;
 use App\Models\ServiceOrder;
 use App\Support\NfeStatus;
 use App\Support\NfseStatus;
@@ -22,7 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class FiscalDocumentResource extends Resource
+class FiscalDocumentResource extends CompanyOwnedResource
 {
     protected static ?string $model = FiscalDocument::class;
 
@@ -42,11 +43,25 @@ class FiscalDocumentResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
+    }
+
+    public static function attentionCount(): int
+    {
+        return static::getEloquentQuery()->needingAttention()->count();
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = auth()->check() ? static::attentionCount() : 0;
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function form(Form $form): Form
@@ -60,6 +75,10 @@ class FiscalDocumentResource extends Resource
             ->poll('10s')
             ->defaultSort('issued_at', 'desc')
             ->columns([
+                Tables\Columns\TextColumn::make('company.name')->label('Empresa')->searchable(),
+                Tables\Columns\TextColumn::make('environment')->label('Ambiente')->badge()->placeholder('Origem a reconciliar')
+                    ->formatStateUsing(fn (?string $state): string => $state === 'producao' ? 'Produção' : ($state === 'homologacao' ? 'Homologação' : 'Origem a reconciliar'))
+                    ->color(fn (?string $state): string => $state === 'producao' ? 'danger' : 'info'),
                 Tables\Columns\TextColumn::make('document_type')
                     ->badge()
                     ->color(fn (string $state): string => $state === 'NF-e' ? 'primary' : 'info')
@@ -143,6 +162,7 @@ class FiscalDocumentResource extends Resource
                     ->label('Último webhook'),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('environment')->label('Ambiente')->options(['homologacao' => 'Homologação', 'producao' => 'Produção']),
                 Tables\Filters\SelectFilter::make('document_type')
                     ->options(['NF-e' => 'NF-e', 'NFS-e' => 'NFS-e'])
                     ->label('Tipo'),
@@ -161,7 +181,7 @@ class FiscalDocumentResource extends Resource
                     ->label('Consultar')
                     ->icon('heroicon-o-arrow-path')
                     ->color('info')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['processando', 'enviando'], true) && $record->isLinked())
+                    ->visible(fn (FiscalDocument $record): bool => filled($record->fiscal_connection_id) && static::canManageCompanyRecord($record))
                     ->action(function (FiscalDocument $record): void {
                         self::dispatchForSource($record, 'consult');
                     })
@@ -172,13 +192,26 @@ class FiscalDocumentResource extends Resource
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalHeading('Reenviar documento fiscal?')
-                    ->modalDescription('O payload será reconstruído com a configuração atual antes do envio.')
-                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true) && $record->isLinked())
+                    ->modalDescription('A nota manterá a conexão, o ambiente e a referência originais. Falhas de resultado incerto serão consultadas antes de outro envio.')
+                    ->visible(fn (FiscalDocument $record): bool => in_array($record->status, ['erro_autorizacao', 'erro_emissao'], true) && $record->isLinked() && filled($record->fiscal_connection_id) && static::canManageCompanyRecord($record))
                     ->action(function (FiscalDocument $record): void {
                         self::dispatchForSource($record, 'emit');
                     })
                     ->successNotificationTitle('Reenvio agendado'),
                 Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('timeline')->label('Histórico de eventos')->icon('heroicon-o-clock')
+                        ->modalHeading('Histórico do documento')->modalSubmitAction(false)->modalCancelActionLabel('Fechar')
+                        ->modalContent(fn (FiscalDocument $record) => view('filament.fiscal.timeline', ['document' => $record])),
+                    Tables\Actions\Action::make('diagnostico')->label('Diagnóstico')->icon('heroicon-o-light-bulb')
+                        ->visible(fn (FiscalDocument $record): bool => $record->status !== 'autorizado' && $record->status !== 'cancelado')
+                        ->modalHeading('Diagnóstico do documento')->modalSubmitAction(false)->modalCancelActionLabel('Fechar')
+                        ->modalContent(fn (FiscalDocument $record) => view('filament.fiscal.diagnosis', ['diagnosis' => app(FiscalIssueDiagnosis::class)->explain($record)])),
+                    Tables\Actions\Action::make('download_xml')->label('Baixar XML')->icon('heroicon-o-arrow-down-tray')
+                        ->visible(fn (FiscalDocument $record): bool => filled($record->xml_path))
+                        ->url(fn (FiscalDocument $record): string => route('fiscal-documents.files', ['fiscalDocument' => $record, 'artifact' => 'xml'])),
+                    Tables\Actions\Action::make('download_cancellation')->label('XML de cancelamento')
+                        ->visible(fn (FiscalDocument $record): bool => filled($record->cancelation_xml_path))
+                        ->url(fn (FiscalDocument $record): string => route('fiscal-documents.files', ['fiscalDocument' => $record, 'artifact' => 'cancelamento'])),
                     Tables\Actions\Action::make('abrir_documento')
                         ->label('Abrir Documento')
                         ->icon('heroicon-o-arrow-top-right-on-square')
@@ -189,7 +222,7 @@ class FiscalDocumentResource extends Resource
                         ->label('Cancelar Nota')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (FiscalDocument $record): bool => $record->isLinked() && ($record->document_type === 'NF-e'
+                        ->visible(fn (FiscalDocument $record): bool => filled($record->fiscal_connection_id) && static::canManageCompanyRecord($record) && ($record->document_type === 'NF-e'
                             ? NfeStatus::canCancel($record->status)
                             : NfseStatus::canCancel($record->status)))
                         ->requiresConfirmation()
@@ -214,23 +247,21 @@ class FiscalDocumentResource extends Resource
 
     private static function dispatchForSource(FiscalDocument $record, string $operation, ?string $justification = null): void
     {
-        if ($record->source_type === Sale::class) {
+        abort_unless(static::canManageCompanyRecord($record), 403);
+        abort_unless($record->fiscal_connection_id && $record->environment, 422, 'Reconcilie a origem deste documento antes de operar.');
+        if ($record->document_type === 'NF-e') {
             match ($operation) {
-                'consult' => ConsultSaleNfeJob::dispatch((int) $record->source_id),
-                'emit' => EmitSaleNfeJob::dispatch((int) $record->source_id),
-                'cancel' => CancelSaleNfeJob::dispatch((int) $record->source_id, $justification),
+                'consult' => ConsultSaleNfeJob::dispatch((int) $record->source_id, $record->id),
+                'emit' => EmitSaleNfeJob::dispatch((int) $record->source_id, $record->id),
+                'cancel' => CancelSaleNfeJob::dispatch((int) $record->source_id, $justification, $record->id),
             };
-
             return;
         }
-
-        if ($record->source_type === ServiceOrder::class) {
-            match ($operation) {
-                'consult' => ConsultServiceNfseJob::dispatch((int) $record->source_id),
-                'emit' => EmitServiceNfseJob::dispatch((int) $record->source_id),
-                'cancel' => CancelServiceNfseJob::dispatch((int) $record->source_id, $justification),
-            };
-        }
+        match ($operation) {
+            'consult' => ConsultServiceNfseJob::dispatch((int) $record->source_id, $record->id),
+            'emit' => EmitServiceNfseJob::dispatch((int) $record->source_id, $record->id),
+            'cancel' => CancelServiceNfseJob::dispatch((int) $record->source_id, $justification, $record->id),
+        };
     }
 
     public static function getPages(): array

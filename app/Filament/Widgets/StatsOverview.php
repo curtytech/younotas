@@ -13,13 +13,11 @@ class StatsOverview extends BaseWidget
 {
     protected function getStats(): array
     {
-        $isAdmin = auth()->user()->role === 'admin';
-        $userId = auth()->id();
-
-        $clientCount = $isAdmin ? Client::count() : Client::where('user_id', $userId)->count();
-        $productCount = $isAdmin ? Product::count() : Product::where('user_id', $userId)->count();
-        $serviceCount = $isAdmin ? Service::count() : Service::where('user_id', $userId)->count();
-        $saleCount = $isAdmin ? Sale::count() : Sale::where('user_id', $userId)->count();
+        $user = auth()->user();
+        $clientCount = Client::query()->visibleTo($user)->count();
+        $productCount = Product::query()->visibleTo($user)->count();
+        $serviceCount = Service::query()->visibleTo($user)->count();
+        $saleCount = Sale::query()->visibleTo($user)->count();
 
         return [
             Stat::make('Clientes', $clientCount)

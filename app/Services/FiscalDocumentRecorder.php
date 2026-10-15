@@ -5,98 +5,121 @@ namespace App\Services;
 use App\Models\FiscalDocument;
 use App\Models\Sale;
 use App\Models\ServiceOrder;
+use App\Support\NfeStatus;
+use App\Support\NfseStatus;
 
-/**
- * Mantém um registro em fiscal_documents por referência Focus. Cada reemissão com
- * nova referência gera um novo registro, preservando o histórico da nota anterior.
- */
+/** Keeps the commercial compatibility fields in sync without changing fiscal identity. */
 class FiscalDocumentRecorder
 {
     public function recordSale(Sale $sale, array $extra = []): ?FiscalDocument
     {
-        if (blank($sale->focus_nfe_ref)) {
-            return null;
-        }
-
-        return FiscalDocument::updateOrCreate(
-            ['user_id' => $sale->user_id, 'focus_reference' => $sale->focus_nfe_ref],
-            array_replace([
-                'document_type' => 'NF-e',
-                'provider' => 'focus',
-                'source_type' => Sale::class,
-                'source_id' => $sale->id,
-                'source_label' => $sale->number,
-                'document_number' => $sale->focus_nfe_number,
-                'series' => $this->stringOrNull($sale->focus_nfe_response_secure['serie'] ?? null),
-                'access_key' => $this->accessKey($sale->user_id, $sale->focus_nfe_ref, $sale->focus_nfe_response_secure['chave_nfe'] ?? null),
-                'status' => $sale->focus_nfe_status,
-                'issued_at' => $sale->sale_date,
-                'total_amount' => $sale->total_amount,
-                'document_url' => $sale->focus_nfe_url,
-                'raw_response' => $sale->focus_nfe_response_secure,
-                'metadata' => array_replace($sale->focus_nfe_payload ?? [], ['origin' => 'emitted']),
-                'last_sent_at' => $sale->focus_nfe_last_sent_at,
-                'last_checked_at' => $sale->focus_nfe_last_checked_at,
-                'last_webhook_at' => $sale->focus_nfe_last_webhook_at,
-                'last_error' => $sale->focus_nfe_error,
-            ], $extra),
-        );
+        return $this->record($sale, 'focus_nfe', 'NF-e', [
+            'document_number' => $sale->focus_nfe_number,
+            'series' => $this->stringOrNull($sale->focus_nfe_response_secure['serie'] ?? null),
+            'access_key' => $this->accessKey($sale->focus_nfe_response_secure['chave_nfe'] ?? null),
+            'issued_at' => $sale->focus_nfe_payload['data_emissao'] ?? $sale->sale_date,
+        ], $extra);
     }
 
-    public function recordServiceOrder(ServiceOrder $serviceOrder, array $extra = []): ?FiscalDocument
+    public function recordServiceOrder(ServiceOrder $order, array $extra = []): ?FiscalDocument
     {
-        if (blank($serviceOrder->focus_nfse_ref)) {
+        return $this->record($order, 'focus_nfse', 'NFS-e', [
+            'document_number' => $this->stringOrNull($order->focus_nfse_response_secure['numero'] ?? null)
+                ?? ($order->focus_nfse_status === NfseStatus::AUTHORIZED ? $order->focus_nfse_number : null),
+            'series' => $this->stringOrNull($order->focus_nfse_response_secure['serie_rps'] ?? null),
+            'issued_at' => $order->focus_nfse_payload['data_emissao'] ?? $order->completed_at,
+            'metadata' => array_filter(['numero_rps' => $order->focus_nfse_response_secure['numero_rps'] ?? null]),
+        ], $extra);
+    }
+
+    private function record(Sale|ServiceOrder $source, string $prefix, string $type, array $attributes, array $extra): ?FiscalDocument
+    {
+        $reference = $source->getAttribute($prefix.'_ref');
+        if (blank($reference)) {
             return null;
         }
 
-        return FiscalDocument::updateOrCreate(
-            ['user_id' => $serviceOrder->user_id, 'focus_reference' => $serviceOrder->focus_nfse_ref],
-            array_replace([
-                'document_type' => 'NFS-e',
-                'provider' => 'focus',
-                'source_type' => ServiceOrder::class,
-                'source_id' => $serviceOrder->id,
-                'source_label' => $serviceOrder->number,
-                // O número da NFS-e só existe após a autorização; antes disso a Focus devolve apenas o RPS.
-                'document_number' => $this->stringOrNull($serviceOrder->focus_nfse_response_secure['numero'] ?? null)
-                    ?? ($serviceOrder->focus_nfse_status === 'autorizado' ? $serviceOrder->focus_nfse_number : null),
-                'series' => $this->stringOrNull($serviceOrder->focus_nfse_response_secure['serie_rps'] ?? null),
-                'status' => $serviceOrder->focus_nfse_status,
-                'issued_at' => $serviceOrder->completed_at,
-                'total_amount' => $serviceOrder->total_amount,
-                'document_url' => $serviceOrder->focus_nfse_url,
-                'raw_response' => $serviceOrder->focus_nfse_response_secure,
-                'metadata' => array_replace($serviceOrder->focus_nfse_payload ?? [], array_filter([
-                    'origin' => 'emitted',
-                    'numero_rps' => $serviceOrder->focus_nfse_response_secure['numero_rps'] ?? null,
-                ])),
-                'last_sent_at' => $serviceOrder->focus_nfse_last_sent_at,
-                'last_checked_at' => $serviceOrder->focus_nfse_last_checked_at,
-                'last_webhook_at' => $serviceOrder->focus_nfse_last_webhook_at,
-                'last_error' => $serviceOrder->focus_nfse_error,
-            ], $extra),
-        );
+        $connectionId = $source->getAttribute($prefix.'_connection_id');
+        $environment = $source->getAttribute($prefix.'_environment');
+        $query = FiscalDocument::query()->where('focus_reference', $reference);
+        if ($connectionId) {
+            $query->where('fiscal_connection_id', $connectionId);
+        } else {
+            $query->where('user_id', $source->user_id)->whereNull('fiscal_connection_id');
+        }
+        $document = $query->first();
+
+        // An imported XML and a local emission represent the same fiscal document.
+        if (! $document && filled($attributes['access_key'] ?? null) && $source->company_id && $environment) {
+            $document = FiscalDocument::query()->where('company_id', $source->company_id)
+                ->where('environment', $environment)->where('access_key', $attributes['access_key'])->first();
+        }
+        if ($document?->isLinked() && ($document->source_type !== $source::class || (int) $document->source_id !== (int) $source->id)) {
+            throw new \RuntimeException('Este documento fiscal já está vinculado a outra operação comercial. Reconcilie a origem.');
+        }
+        $document ??= new FiscalDocument;
+        $payload = $source->getAttribute($prefix.'_payload') ?? [];
+        $status = $source->getAttribute($prefix.'_status');
+        $statusClass = $type === 'NF-e' ? NfeStatus::class : NfseStatus::class;
+        $replace = ! $document->exists || $statusClass::shouldReplace($document->status, $status) || $document->status === $status;
+
+        $values = array_replace([
+            'user_id' => $source->user_id,
+            'company_id' => $source->company_id,
+            'document_type' => $type,
+            'provider' => 'focus',
+            'source_type' => $source::class,
+            'source_id' => $source->id,
+            'source_label' => $source->number,
+            'focus_reference' => $reference,
+            'total_amount' => $source->total_amount,
+            'status' => $status,
+            'document_url' => $source->getAttribute($prefix.'_url'),
+            'raw_response' => $source->getAttribute($prefix.'_response_secure'),
+            'metadata' => ['origin' => 'emitted'],
+            'issuer_document' => data_get($payload, 'cnpj_emitente') ?? data_get($payload, 'prestador.cnpj'),
+            'recipient_document' => data_get($payload, 'cnpj_destinatario') ?? data_get($payload, 'cpf_destinatario')
+                ?? data_get($payload, 'tomador.cnpj') ?? data_get($payload, 'tomador.cpf'),
+            'last_sent_at' => $source->getAttribute($prefix.'_last_sent_at'),
+            'last_checked_at' => $source->getAttribute($prefix.'_last_checked_at'),
+            'last_webhook_at' => $source->getAttribute($prefix.'_last_webhook_at'),
+            'last_error' => $source->getAttribute($prefix.'_error'),
+        ], $attributes, $extra);
+
+        $values['metadata'] = array_replace(['origin' => 'emitted'], $document->metadata ?? [], $values['metadata'] ?? []);
+        if ($payload !== []) {
+            $values['metadata']['focus_payload'] = $payload;
+            $values['payload_hash'] = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+        }
+        if (! $document->fiscal_connection_id && $connectionId) {
+            $values['fiscal_connection_id'] = $connectionId;
+            $values['environment'] = $environment;
+            $values['configuration_snapshot'] = $source->getAttribute($prefix.'_configuration_snapshot');
+        }
+        if (! $replace) {
+            foreach (['status', 'raw_response', 'last_error', 'document_number', 'document_url', 'series'] as $field) {
+                unset($values[$field]);
+            }
+        }
+        if (($values['status'] ?? null) === NfeStatus::AUTHORIZED && ! $document->authorized_at) {
+            $values['authorized_at'] = now();
+        }
+        if ($document->exists) {
+            // Identity already reserved by the fiscal workflow always wins.
+            unset($values['user_id'], $values['company_id']);
+        }
+        $document->fill($values)->save();
+
+        return $document;
     }
 
-    protected function accessKey(int $userId, string $reference, mixed $value): ?string
+    private function accessKey(mixed $value): ?string
     {
         $key = preg_replace('/\D/', '', (string) $value) ?? '';
-
-        if (strlen($key) !== 44) {
-            return null;
-        }
-
-        // A mesma nota pode já existir no histórico por importação de backup (chave única por empresa).
-        $takenByOther = FiscalDocument::query()
-            ->where('user_id', $userId)
-            ->where('access_key', $key)
-            ->where(fn ($query) => $query->whereNull('focus_reference')->orWhere('focus_reference', '!=', $reference))
-            ->exists();
-
-        return $takenByOther ? null : $key;
+        return strlen($key) === 44 ? $key : null;
     }
 
-    protected function stringOrNull(mixed $value): ?string
+    private function stringOrNull(mixed $value): ?string
     {
         return filled($value) ? (string) $value : null;
     }

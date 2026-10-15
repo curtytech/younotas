@@ -16,7 +16,7 @@ class SaleItemFactory extends Factory
     {
         return [
             'sale_id' => Sale::factory(),
-            'product_id' => Product::factory(),
+            'product_id' => fn (array $attributes) => Product::factory()->create(['user_id' => Sale::findOrFail($attributes['sale_id'])->user_id, 'company_id' => Sale::findOrFail($attributes['sale_id'])->company_id, 'stock_quantity' => 100])->id,
             'product_name' => 'Item de teste',
             'product_code' => '1',
             'unit' => 'UN',

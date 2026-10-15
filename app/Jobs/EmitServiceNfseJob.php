@@ -3,8 +3,10 @@
 namespace App\Jobs;
 
 use App\Actions\EmitServiceNfseAction;
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
-use App\Support\NfseStatus;
+use App\Services\FiscalEmissionPreparation;
+use App\Services\FiscalDocumentWorkflow;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,42 +20,34 @@ class EmitServiceNfseJob implements ShouldBeUnique, ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
-
     public array $backoff = [30, 120];
-
     public int $uniqueFor = 600;
+    public int $documentId;
+    public ?int $actorId;
 
-    public function __construct(public int $serviceId) {}
+    public function __construct(public int $serviceId, ?int $documentId = null, bool $reserved = false)
+    {
+        $this->documentId = $documentId ? ($reserved ? app(FiscalDocumentWorkflow::class)->resolve(FiscalDocument::findOrFail($documentId))->id : app(FiscalEmissionPreparation::class)->reserveRetry(FiscalDocument::findOrFail($documentId), auth()->id())->id) : app(FiscalEmissionPreparation::class)
+            ->reserve(ServiceOrder::findOrFail($serviceId), auth()->id())->id;
+        $this->actorId = auth()->id() ?? ($reserved ? FiscalDocument::findOrFail($this->documentId)->issued_by : null);
+    }
 
     public function uniqueId(): string
     {
-        return (string) $this->serviceId;
+        return 'document:'.$this->documentId;
     }
 
     public function handle(EmitServiceNfseAction $action): void
     {
-        $service = ServiceOrder::findOrFail($this->serviceId);
-        $action->execute($service);
-        $service->refresh();
-
-        if ($service->focus_nfse_status === NfseStatus::PROCESSING) {
-            ConsultServiceNfseJob::dispatch($service->id)->delay(now()->addMinute());
-        }
+        $document = FiscalDocument::findOrFail($this->documentId);
+        app(FiscalEmissionPreparation::class)->authorize($document->company_id, $this->actorId);
+        $action->execute($document);
     }
 
     public function failed(Throwable $exception): void
     {
-        $service = ServiceOrder::find($this->serviceId);
-
-        if ($service) {
-            $service->update([
-                'focus_nfse_error' => [
-                    'operation' => 'emissao',
-                    'message' => 'Esgotadas as tentativas de emissão: '.$exception->getMessage(),
-                    'exception' => $exception::class,
-                    'at' => now()->toIso8601String(),
-                ],
-            ]);
+        if ($document = FiscalDocument::find($this->documentId)) {
+            app(FiscalDocumentWorkflow::class)->recordFailure($document, $exception, 'emissao');
         }
     }
 }

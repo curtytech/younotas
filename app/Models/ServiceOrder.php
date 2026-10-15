@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\FiscalDocumentRecorder;
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,22 +12,28 @@ use InvalidArgumentException;
 
 class ServiceOrder extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToCompany;
 
     protected $fillable = [
-        'user_id', 'client_id', 'technician_id', 'number', 'status', 'scheduled_for',
+        'user_id', 'company_id', 'client_id', 'technician_id', 'number', 'status', 'scheduled_for',
         'started_at', 'completed_at', 'problem_description', 'execution_description',
         'subtotal_amount', 'discount_amount', 'tax_amount', 'total_amount', 'notes',
         'signature_path', 'signed_by_name', 'signed_at', 'focus_nfse_ref', 'focus_nfse_status',
         'focus_nfse_number', 'focus_nfse_url', 'focus_nfse_response_secure', 'focus_nfse_payload',
         'focus_nfse_error', 'focus_nfse_attempts', 'focus_nfse_last_sent_at',
         'focus_nfse_last_checked_at', 'focus_nfse_last_webhook_at',
+        'focus_nfse_connection_id', 'focus_nfse_environment', 'focus_nfse_configuration_snapshot',
+        'focus_nfse_next_check_at',
+        'iss_retido', 'codigo_municipio_prestacao',
     ];
 
     protected $casts = [
         'scheduled_for' => 'datetime', 'started_at' => 'datetime', 'completed_at' => 'datetime',
         'signed_at' => 'datetime', 'focus_nfse_response_secure' => 'encrypted:array',
         'focus_nfse_payload' => 'encrypted:array', 'focus_nfse_error' => 'encrypted:array',
+        'focus_nfse_configuration_snapshot' => 'encrypted:array',
+        'focus_nfse_next_check_at' => 'datetime',
+        'iss_retido' => 'boolean',
         'focus_nfse_attempts' => 'integer', 'focus_nfse_last_sent_at' => 'datetime',
         'focus_nfse_last_checked_at' => 'datetime', 'focus_nfse_last_webhook_at' => 'datetime',
         'subtotal_amount' => 'decimal:2', 'discount_amount' => 'decimal:2',
@@ -35,6 +42,18 @@ class ServiceOrder extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (ServiceOrder $order): void {
+            foreach (['client', 'technician'] as $relation) {
+                if ($order->getAttribute($relation.'_id') && (int) $order->{$relation}()->value('company_id') !== (int) $order->company_id) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([$relation.'_id' => 'O cadastro deve pertencer à mesma empresa da O.S.']);
+                }
+            }
+        });
+        static::deleting(function (ServiceOrder $order): void {
+            if ($order->fiscalDocuments()->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['service_order' => 'Preserve a O.S. vinculada ao histórico fiscal.']);
+            }
+        });
         static::saved(function (ServiceOrder $order): void {
             $tracked = ['focus_nfse_ref', 'focus_nfse_status', 'focus_nfse_number', 'focus_nfse_url', 'focus_nfse_last_checked_at', 'focus_nfse_last_webhook_at'];
 
@@ -80,4 +99,6 @@ class ServiceOrder extends Model
     public function technician(): BelongsTo { return $this->belongsTo(Technician::class); }
     public function items(): HasMany { return $this->hasMany(ServiceOrderItem::class); }
     public function attachments(): HasMany { return $this->hasMany(ServiceOrderAttachment::class); }
+    public function fiscalConnection(): BelongsTo { return $this->belongsTo(FiscalConnection::class, 'focus_nfse_connection_id'); }
+    public function fiscalDocuments(): HasMany { return $this->hasMany(FiscalDocument::class, 'source_id')->where('source_type', self::class); }
 }

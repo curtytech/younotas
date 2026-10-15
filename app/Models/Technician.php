@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +11,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Technician extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToCompany;
 
-    protected $fillable = ['user_id', 'name', 'phone', 'email', 'is_active', 'notes'];
+    protected $fillable = ['user_id', 'company_id', 'name', 'phone', 'email', 'is_active', 'notes'];
 
     protected $casts = ['is_active' => 'boolean'];
 

@@ -22,6 +22,11 @@ class SaleItemStockService
             return;
         }
 
+        $sale = $saleItem->sale;
+        if (! $sale || (int) $sale->company_id !== (int) $product->company_id) {
+            throw ValidationException::withMessages(['saleItems' => 'O produto deve pertencer à mesma empresa da venda.']);
+        }
+
         $requestedQuantity = round((float) $saleItem->quantity, 3);
         $availableStock = (float) $product->stock_quantity;
 
@@ -132,6 +137,7 @@ class SaleItemStockService
             ]);
 
             StockMovement::query()->create([
+                'company_id' => $product->company_id,
                 'user_id' => $saleItem->sale?->user_id ?? $product->user_id,
                 'product_id' => $product->id,
                 'movement_type' => $deltaQuantity < 0 ? 'exit' : 'entry',

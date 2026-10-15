@@ -8,5 +8,7 @@ use Filament\Resources\Pages\CreateRecord;
 
 class CreateClient extends CreateRecord
 {
+    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+
     protected static string $resource = ClientResource::class;
 }

@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\FiscalDocument;
+use App\Models\FiscalConnection;
 use App\Models\User;
 use DOMDocument;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Auth\Access\AuthorizationException;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
@@ -17,30 +20,30 @@ class FocusNfeBackupService
         protected FocusNfeConfigService $configService,
     ) {}
 
-    public function listBackups(User $user): array
+    public function listBackups(User $user, ?int $connectionId = null): array
     {
-        $config = $this->configService->forUser($user);
+        $config = $this->configurationFor($user, $connectionId);
         $cnpj = $this->prestadorCnpj($user, $config);
 
         $response = $this->apiClient->get($config, '/v2/backups/'.$cnpj.'.json');
 
         if ($response->failed()) {
-            throw new RuntimeException($response->json('mensagem') ?? 'Falha ao listar backups da Focus.');
+            throw new RuntimeException('Falha ao listar backups da Focus (HTTP '.$response->status().').');
         }
 
         return $response->json() ?? [];
     }
 
-    public function importMonth(User $user, string $month): array
+    public function importMonth(User $user, string $month, ?int $connectionId = null): array
     {
         if (! preg_match('/^\d{6}$/', $month)) {
             throw new RuntimeException('O mês do backup deve estar no formato AAAAMM.');
         }
 
-        $config = $this->configService->forUser($user);
+        $config = $this->configurationFor($user, $connectionId);
         $cnpj = $this->prestadorCnpj($user, $config);
 
-        $backup = collect($this->listBackups($user))
+        $backup = collect($this->listBackups($user, $connectionId))
             ->first(fn (array $item): bool => ($item['mes'] ?? null) === $month);
 
         if (! $backup || blank($backup['xmls'] ?? null)) {
@@ -62,7 +65,7 @@ class FocusNfeBackupService
             for ($index = 0; $index < $zip->numFiles; $index++) {
                 $name = (string) $zip->getNameIndex($index);
 
-                if (! str_ends_with($name, '-nfe.xml')) {
+                if (! str_ends_with(strtolower($name), '.xml')) {
                     continue;
                 }
 
@@ -78,7 +81,7 @@ class FocusNfeBackupService
                     $stats[$this->importNfeXml($user, $config, $xml, $month)]++;
                 } catch (Throwable $exception) {
                     $stats['failed']++;
-                    $stats['failed_messages'][] = $name.': '.$exception->getMessage();
+                    $stats['failed_messages'][] = 'Não foi possível processar um XML do backup ('.$exception::class.').';
                 }
             }
 
@@ -105,52 +108,74 @@ class FocusNfeBackupService
             return 'ignored';
         }
 
-        $xmlPath = 'fiscal/xmls/'.$user->id.'/'.$data['access_key'].'.xml';
+        $environment = ($data['tp_amb'] ?? null) === '1' ? 'producao' : (($data['tp_amb'] ?? null) === '2' ? 'homologacao' : null);
+        if (! $environment || $environment !== $config['environment']) {
+            return 'ignored';
+        }
+
+        $isCancellation = ! empty($data['is_cancellation']);
+        $xmlPath = 'fiscal/xmls/'.$config['company_id'].'/'.$environment.'/'.$data['access_key'].($isCancellation ? '-cancelamento' : '').'.xml';
         Storage::disk('local')->put($xmlPath, $xml);
 
         $attributes = [
             'user_id' => $user->id,
+            'company_id' => $config['company_id'],
+            'fiscal_connection_id' => $config['fiscal_connection_id'],
+            'environment' => $environment,
+            'configuration_snapshot' => FiscalEmissionPreparation::snapshot($config),
             'document_type' => 'NF-e',
             'provider' => 'focus',
-            'source_label' => $data['number'],
+            'source_label' => $data['number'] ?? null,
             'access_key' => $data['access_key'],
-            'document_number' => $data['number'],
-            'series' => $data['series'],
-            'status' => 'autorizado',
-            'issued_at' => $data['issued_at'],
-            'authorized_at' => $data['authorized_at'],
+            'document_number' => $data['number'] ?? null,
+            'series' => $data['series'] ?? null,
+            'status' => $isCancellation ? 'cancelado' : 'autorizado',
+            'issued_at' => $data['issued_at'] ?? null,
+            'authorized_at' => $data['authorized_at'] ?? null,
             'issuer_document' => $data['issuer_document'],
-            'recipient_document' => $data['recipient_document'],
-            'total_amount' => $data['total_amount'],
-            'xml_path' => $xmlPath,
+            'recipient_document' => $data['recipient_document'] ?? null,
+            'total_amount' => $data['total_amount'] ?? null,
+            $isCancellation ? 'cancelation_xml_path' : 'xml_path' => $xmlPath,
             'payload_hash' => hash('sha256', $xml),
-            'raw_response' => ['xml_path' => $xmlPath, 'month' => $month],
-            'metadata' => ['origin' => 'focus_backup', 'month' => $month, 'tp_amb' => $data['tp_amb']],
+            'raw_response' => [$isCancellation ? 'cancelation_xml_path' : 'xml_path' => $xmlPath, 'month' => $month],
+            'metadata' => ['origin' => 'focus_backup', 'month' => $month, 'tp_amb' => $data['tp_amb'], 'xml_sha256' => hash('sha256', $xml)],
             'imported_at' => now(),
             'last_synced_at' => now(),
         ];
 
-        $existing = FiscalDocument::query()
-            ->where('user_id', $user->id)
-            ->where('access_key', $data['access_key'])
-            ->first();
+        return DB::transaction(function () use ($attributes, $config, $environment, $data, $isCancellation): string {
+            $existing = FiscalDocument::query()->where('company_id', $config['company_id'])->where('environment', $environment)
+                ->where('access_key', $data['access_key'])->lockForUpdate()->first();
+            $updates = $attributes;
+            if ($existing) {
+                if (in_array($existing->status, ['cancelado', 'denegado'], true) && ! $isCancellation) {
+                    $updates['status'] = $existing->status;
+                }
+                $updates = array_filter($updates, static fn ($value): bool => $value !== null);
+                // Import enriches an existing issuance; its payload, origin and connection remain intact.
+                $updates['configuration_snapshot'] = $existing->configuration_snapshot ?: $updates['configuration_snapshot'];
+                $updates['fiscal_connection_id'] = $existing->fiscal_connection_id ?: $updates['fiscal_connection_id'];
+                $updates['metadata'] = array_replace($updates['metadata'], $existing->metadata ?? [], ['month' => $updates['metadata']['month'], 'xml_sha256' => $updates['metadata']['xml_sha256']]);
+                $updates['raw_response'] = array_replace($existing->raw_response ?? [], $updates['raw_response']);
+                $updates['payload_hash'] = $existing->payload_hash ?: $updates['payload_hash'];
+                $existing->update($updates);
+                app(FiscalDocumentWorkflow::class)->syncSource($existing);
+                app(FiscalAudit::class)->record($existing, 'document_imported', ['origin' => 'focus_backup'], auth()->id());
 
-        if ($existing) {
-            $existing->update($attributes);
+                return 'updated';
+            }
+            $document = FiscalDocument::create($updates);
+            app(FiscalAudit::class)->record($document, 'document_imported', ['origin' => 'focus_backup'], auth()->id());
 
-            return 'updated';
-        }
-
-        FiscalDocument::create($attributes);
-
-        return 'imported';
+            return 'imported';
+        });
     }
 
     protected function parseNfeXml(string $xml): ?array
     {
         $document = new DOMDocument;
         $previous = libxml_use_internal_errors(true);
-        $loaded = $document->loadXML($xml);
+        $loaded = $document->loadXML($xml, LIBXML_NONET);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
 
@@ -159,6 +184,16 @@ class FocusNfeBackupService
         }
 
         $root = $document->documentElement;
+        $eventType = $this->text($root, 'tpEvento');
+        if ($eventType === '110111') {
+            $return = $this->firstByTag($root, 'retEvento');
+            $accessKey = preg_replace('/\D/', '', (string) $this->text($root, 'chNFe'));
+            if (! $return || ! in_array($this->text($return, 'cStat'), ['135', '155'], true) || strlen($accessKey) !== 44) {
+                return null;
+            }
+
+            return ['access_key' => $accessKey, 'issuer_document' => substr($accessKey, 6, 14), 'tp_amb' => $this->text($root, 'tpAmb'), 'is_cancellation' => true];
+        }
         $infNfe = $this->firstByTag($root, 'infNFe');
         $ide = $this->firstByTag($root, 'ide');
         $emit = $this->firstByTag($root, 'emit');
@@ -168,6 +203,11 @@ class FocusNfeBackupService
         $accessKey = preg_replace('/\D/', '', (string) ($infNfe?->getAttribute('Id') ?? ''));
 
         if (strlen($accessKey) !== 44) {
+            return null;
+        }
+
+        $protocol = $this->firstByTag($root, 'protNFe');
+        if (! $protocol || ! in_array($this->text($protocol, 'cStat'), ['100', '150'], true)) {
             return null;
         }
 
@@ -184,16 +224,16 @@ class FocusNfeBackupService
         ];
     }
 
-    protected function firstByTag(\DOMElement $parent, string $tag): ?\DOMElement
+    protected function firstByTag(?\DOMElement $parent, string $tag): ?\DOMElement
     {
-        $node = $parent->getElementsByTagName($tag)->item(0);
+        $node = $parent?->getElementsByTagName($tag)->item(0);
 
         return $node instanceof \DOMElement ? $node : null;
     }
 
-    protected function text(\DOMElement $parent, string $tag): ?string
+    protected function text(?\DOMElement $parent, string $tag): ?string
     {
-        $node = $parent->getElementsByTagName($tag)->item(0);
+        $node = $parent?->getElementsByTagName($tag)->item(0);
 
         if (! $node) {
             return null;
@@ -226,5 +266,18 @@ class FocusNfeBackupService
         }
 
         return $cnpj;
+    }
+
+    public function configurationFor(User $user, ?int $connectionId = null): array
+    {
+        if (! $connectionId) {
+            return $this->configService->forUser($user);
+        }
+        $connection = FiscalConnection::findOrFail($connectionId);
+        if (! $user->canAccessCompany($connection->company, 'issue')) {
+            throw new AuthorizationException('Você não pode importar documentos desta empresa.');
+        }
+
+        return $this->configService->forConnection($connection);
     }
 }

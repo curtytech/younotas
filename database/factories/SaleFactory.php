@@ -16,7 +16,7 @@ class SaleFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'client_id' => Client::factory(),
+            'client_id' => fn (array $attributes) => Client::factory()->create(['user_id' => $attributes['user_id'], 'company_id' => $attributes['company_id'] ?? null])->id,
             'number' => (string) fake()->unique()->numberBetween(1000, 999999),
             'sale_date' => today(),
             'status' => 'completed',

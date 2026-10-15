@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\FocusNfeRequestException;
+use App\Models\FiscalDocument;
 use App\Models\Sale;
 use Illuminate\Http\Client\Response;
 use RuntimeException;
@@ -15,16 +16,17 @@ class FocusNfeService
         protected FocusApiClient $apiClient,
     ) {}
 
-    public function configurationFor(Sale $sale): array
+    public function configurationFor(Sale|FiscalDocument $sale): array
     {
-        $sale->loadMissing('user.focusNfeSetting');
-
-        return $this->configService->forUser($sale->user);
+        if ($sale instanceof Sale && blank($sale->focus_nfe_ref)) {
+            return $sale->company_id ? $this->configService->forCompany($sale->company) : $this->configService->forUser($sale->user);
+        }
+        return $this->configService->forDocument(app(FiscalDocumentWorkflow::class)->resolve($sale));
     }
 
     public function buildPayload(Sale $sale, array $config): array
     {
-        return $this->payloadService->buildPayload($sale);
+        return $this->payloadService->buildPayload($sale, $config);
     }
 
     public function emit(array $config, string $reference, array $payload): array
@@ -32,27 +34,29 @@ class FocusNfeService
         $response = $this->apiClient->post($config, '/v2/nfe', $payload, ['ref' => $reference]);
         $this->throwForFailure($response);
 
-        return $response->json() ?? [];
+        return FocusResponse::document($response);
     }
 
-    public function consult(Sale $sale): array
+    public function consult(Sale|FiscalDocument $sale): array
     {
-        if (blank($sale->focus_nfe_ref)) {
+        $document = app(FiscalDocumentWorkflow::class)->resolve($sale);
+        if (blank($document->focus_reference)) {
             throw new RuntimeException('A venda não possui uma referência de NF-e para consultar.');
         }
 
         $response = $this->apiClient->get(
-            $this->configurationFor($sale),
-            '/v2/nfe/'.urlencode($sale->focus_nfe_ref),
+            $this->configurationFor($document),
+            '/v2/nfe/'.urlencode($document->focus_reference),
         );
         $this->throwForFailure($response);
 
-        return $response->json() ?? [];
+        return FocusResponse::document($response);
     }
 
-    public function cancel(Sale $sale, string $justification): array
+    public function cancel(Sale|FiscalDocument $sale, string $justification): array
     {
-        if (blank($sale->focus_nfe_ref)) {
+        $document = app(FiscalDocumentWorkflow::class)->resolve($sale);
+        if (blank($document->focus_reference)) {
             throw new RuntimeException('A venda não possui uma referência de NF-e para cancelar.');
         }
 
@@ -62,13 +66,13 @@ class FocusNfeService
         }
 
         $response = $this->apiClient->delete(
-            $this->configurationFor($sale),
-            '/v2/nfe/'.urlencode($sale->focus_nfe_ref),
+            $this->configurationFor($document),
+            '/v2/nfe/'.urlencode($document->focus_reference),
             ['justificativa' => $justification],
         );
         $this->throwForFailure($response);
 
-        return $response->json() ?? [];
+        return FocusResponse::document($response);
     }
 
     public function documentUrl(array $response, ?array $config = null): ?string
@@ -94,7 +98,7 @@ class FocusNfeService
 
         $data = $response->json();
         throw new FocusNfeRequestException(
-            $data['mensagem'] ?? $data['message'] ?? data_get($data, 'erros.0.mensagem') ?? $response->body(),
+            'A Focus recusou a operação (HTTP '.$response->status().').',
             $response->status(),
             is_array($data) ? $data : null,
         );

@@ -3,7 +3,10 @@
 namespace App\Jobs;
 
 use App\Actions\CancelServiceNfseAction;
+use App\Models\FiscalDocument;
 use App\Models\ServiceOrder;
+use App\Services\FiscalDocumentWorkflow;
+use App\Services\FiscalEmissionPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,36 +20,34 @@ class CancelServiceNfseJob implements ShouldBeUnique, ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
-
     public array $backoff = [30, 120];
-
     public int $uniqueFor = 600;
+    public int $documentId;
+    public ?int $actorId;
 
-    public function __construct(public int $serviceId, public string $justification) {}
+    public function __construct(public int $serviceId, public string $justification, ?int $documentId = null)
+    {
+        $this->documentId = $documentId ?? app(FiscalDocumentWorkflow::class)->resolve(ServiceOrder::findOrFail($serviceId))->id;
+        $this->actorId = auth()->id();
+        app(FiscalEmissionPreparation::class)->authorize(FiscalDocument::findOrFail($this->documentId)->company_id, $this->actorId);
+    }
 
     public function uniqueId(): string
     {
-        return (string) $this->serviceId;
+        return 'document:'.$this->documentId;
     }
 
     public function handle(CancelServiceNfseAction $action): void
     {
-        $action->execute(ServiceOrder::findOrFail($this->serviceId), $this->justification);
+        $document = FiscalDocument::findOrFail($this->documentId);
+        app(FiscalEmissionPreparation::class)->authorize($document->company_id, $this->actorId);
+        $action->execute($document, $this->justification);
     }
 
     public function failed(Throwable $exception): void
     {
-        $service = ServiceOrder::find($this->serviceId);
-
-        if ($service) {
-            $service->update([
-                'focus_nfse_error' => [
-                    'operation' => 'cancelamento',
-                    'message' => 'Esgotadas as tentativas de cancelamento: '.$exception->getMessage(),
-                    'exception' => $exception::class,
-                    'at' => now()->toIso8601String(),
-                ],
-            ]);
+        if ($document = FiscalDocument::find($this->documentId)) {
+            app(FiscalDocumentWorkflow::class)->recordFailure($document, $exception, 'cancelamento');
         }
     }
 }

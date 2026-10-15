@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\FocusNfseRequestException;
 use App\Models\Client;
+use App\Models\FiscalDocument as FiscalDocumentModel;
 use App\Models\ServiceOrder;
 use App\Support\FiscalDocument;
 use Illuminate\Http\Client\RequestException;
@@ -18,11 +19,14 @@ class FocusNfseService
         protected FocusMunicipioService $municipioService,
     ) {}
 
-    public function configurationFor(ServiceOrder $service): array
+    public function configurationFor(ServiceOrder|FiscalDocumentModel $service): array
     {
-        $service->loadMissing('user.focusNfeSetting');
-
-        return $this->focusNfeConfigService->forUser($service->user);
+        if ($service instanceof ServiceOrder && blank($service->focus_nfse_ref)) {
+            return $service->company_id
+                ? $this->focusNfeConfigService->forCompany($service->company)
+                : $this->focusNfeConfigService->forUser($service->user);
+        }
+        return $this->focusNfeConfigService->forDocument(app(FiscalDocumentWorkflow::class)->resolve($service));
     }
 
     public function emit(array $focusConfig, string $reference, array $payload): array
@@ -31,30 +35,30 @@ class FocusNfseService
 
         $this->throwForFailure($response);
 
-        return $response->json();
+        return FocusResponse::document($response);
     }
 
-    public function consult(ServiceOrder $service): array
+    public function consult(ServiceOrder|FiscalDocumentModel $service): array
     {
-        $service->loadMissing('user.focusNfeSetting');
-
-        if (blank($service->focus_nfse_ref)) {
+        $document = app(FiscalDocumentWorkflow::class)->resolve($service);
+        if (blank($document->focus_reference)) {
             throw new RuntimeException('O serviço não possui uma referência de NFS-e para consultar.');
         }
 
         $response = $this->apiClient->get(
-            $this->configurationFor($service),
-            '/v2/nfse/'.urlencode($service->focus_nfse_ref),
+            $this->configurationFor($document),
+            '/v2/nfse/'.urlencode($document->focus_reference),
         );
 
         $this->throwForFailure($response);
 
-        return $response->json();
+        return FocusResponse::document($response);
     }
 
-    public function cancel(ServiceOrder $service, string $justification): array
+    public function cancel(ServiceOrder|FiscalDocumentModel $service, string $justification): array
     {
-        if (blank($service->focus_nfse_ref)) {
+        $document = app(FiscalDocumentWorkflow::class)->resolve($service);
+        if (blank($document->focus_reference)) {
             throw new RuntimeException('O serviço não possui uma referência de NFS-e para cancelar.');
         }
 
@@ -64,14 +68,14 @@ class FocusNfseService
         }
 
         $response = $this->apiClient->delete(
-            $this->configurationFor($service),
-            '/v2/nfse/'.urlencode($service->focus_nfse_ref),
+            $this->configurationFor($document),
+            '/v2/nfse/'.urlencode($document->focus_reference),
             ['justificativa' => $justification],
         );
 
         $this->throwForFailure($response);
 
-        return $response->json();
+        return FocusResponse::document($response);
     }
 
     public function buildPayload(ServiceOrder $service, array $focusConfig): array
@@ -80,10 +84,14 @@ class FocusNfseService
         $this->guardRequiredConfiguration($focusConfig);
 
         if ($service->client) {
-            $this->municipioService->ensureClientIbgeCode($service->client);
+            $this->municipioService->ensureClientIbgeCode($service->client, $focusConfig);
         }
 
         $this->guardRequiredModelData($service);
+
+        if (isset($focusConfig['company_id']) && (int) $focusConfig['company_id'] !== (int) $service->company_id) {
+            throw new RuntimeException('A configuração fiscal deve pertencer à empresa da O.S.');
+        }
 
         $client = $service->client;
         $prestadorMunicipio = $this->onlyDigits((string) data_get($focusConfig, 'prestador.codigo_municipio'));
@@ -124,13 +132,13 @@ class FocusNfseService
             ], static fn (mixed $value): bool => $value !== null && $value !== ''),
             'servico' => array_filter([
                 'valor_servicos' => $serviceValue,
-                'iss_retido' => false,
+                'iss_retido' => (bool) $service->iss_retido,
                 'item_lista_servico' => (string) ($firstItem?->lc116_code ?: $firstItem?->municipal_service_code),
                 'codigo_cnae' => filled($firstItem?->cnae_code) ? $this->onlyDigits($firstItem->cnae_code) : null,
                 'codigo_tributacao_municipio' => $firstItem?->municipal_service_code,
                 'codigo_nbs' => $firstItem?->nbs_code,
                 'discriminacao' => $description ?: 'Serviços da Ordem '.$service->number,
-                'codigo_municipio' => $prestadorMunicipio,
+                'codigo_municipio' => $service->codigo_municipio_prestacao ?: $prestadorMunicipio,
                 'aliquota' => $this->nullableDecimal($firstItem?->iss_aliquot),
                 'valor_iss' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->iss_aliquot) ?: 0)),
                 'valor_pis' => $this->decimalToFloat((string) $items->sum(fn ($item) => $this->taxValue($item->quantity * $item->unit_price, $item->pis_aliquot) ?: 0)),
@@ -152,13 +160,9 @@ class FocusNfseService
             $responseData = $response->json();
 
             throw new FocusNfseRequestException(
-                $response->json('mensagem')
-                    ?? $response->json('mensagens.0.mensagem')
-                    ?? $response->json('erros.0.mensagem')
-                    ?? $exception->getMessage(),
+                'A Focus recusou a operação (HTTP '.$response->status().').',
                 $response->status(),
                 is_array($responseData) ? $responseData : null,
-                previous: $exception,
             );
         }
     }
@@ -193,7 +197,7 @@ class FocusNfseService
     protected function guardRequiredModelData(ServiceOrder $service): void
     {
         $client = $service->client;
-        if (! $client || $client->user_id !== $service->user_id) {
+        if (! $client || ! $service->company_id || (int) $client->company_id !== (int) $service->company_id) {
             throw new RuntimeException('O serviço deve estar vinculado a um cliente do mesmo emissor.');
         }
 
@@ -209,9 +213,22 @@ class FocusNfseService
             throw new RuntimeException('Cada item da O.S. deve possuir código LC 116 ou código municipal.');
         }
 
-        if ($service->items->pluck('lc116_code')->filter()->unique()->count() > 1
-            || $service->items->pluck('municipal_service_code')->filter()->unique()->count() > 1) {
-            throw new RuntimeException('Todos os itens da O.S. devem usar o mesmo código de serviço para emissão da NFS-e.');
+        foreach (['lc116_code', 'municipal_service_code', 'cnae_code', 'nbs_code', 'iss_aliquot'] as $field) {
+            $values = $service->items->map(fn ($item): string => $field === 'iss_aliquot'
+                ? number_format((float) $item->{$field}, 2, '.', '')
+                : trim((string) $item->{$field}));
+
+            if ($values->unique()->count() > 1) {
+                throw new RuntimeException('Os itens da mesma NFS-e devem possuir códigos de serviço, CNAE, NBS e alíquota ISS compatíveis. Separe a O.S. por perfil fiscal.');
+            }
+        }
+
+        if (filled($service->codigo_municipio_prestacao) && ! preg_match('/^\d{7}$/', (string) $service->codigo_municipio_prestacao)) {
+            throw new RuntimeException('O município da prestação deve possuir código IBGE de 7 dígitos.');
+        }
+
+        if ($service->iss_retido && (float) $service->items->first()?->iss_aliquot <= 0) {
+            throw new RuntimeException('Informe a alíquota ISS para emitir uma NFS-e com retenção.');
         }
 
         if (! $this->clientDocumentIsValid($client)) {
