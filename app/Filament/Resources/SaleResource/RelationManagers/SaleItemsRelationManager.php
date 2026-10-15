@@ -18,16 +18,19 @@ class SaleItemsRelationManager extends RelationManager
 
     protected static ?string $title = 'Itens da Venda';
 
+
+    public function isReadOnly(): bool
+    {
+        return ! auth()->user()->canAccessCompany((int) $this->getOwnerRecord()->company_id, 'issue');
+    }
+
     public function form(Form $form): Form
     {
         return $form
             ->schema([
                 Forms\Components\Select::make('product_id')
                     ->options(fn (): array => Product::query()
-                        ->when(
-                            auth()->user()->role !== 'admin',
-                            fn ($query) => $query->where('user_id', auth()->id()),
-                        )
+                        ->where('company_id', $this->getOwnerRecord()->company_id)
                         ->orderBy('name')
                         ->pluck('name', 'id')
                         ->all())
@@ -38,7 +41,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->label('Produto')
                     ->live()
                     ->afterStateUpdated(function ($state, callable $set): void {
-                        $product = Product::find($state);
+                        $product = Product::query()->where('company_id', $this->getOwnerRecord()->company_id)->find($state);
 
                         if (! $product) {
                             return;
@@ -148,6 +151,9 @@ class SaleItemsRelationManager extends RelationManager
 
                         $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
                     }),
+                Forms\Components\TextInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                Forms\Components\TextInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                Forms\Components\TextInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
                 Forms\Components\TextInput::make('total_amount')
                     ->numeric()
                     ->required()

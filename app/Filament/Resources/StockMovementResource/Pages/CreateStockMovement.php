@@ -8,14 +8,13 @@ use Filament\Resources\Pages\CreateRecord;
 
 class CreateStockMovement extends CreateRecord
 {
+    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+
     protected static string $resource = StockMovementResource::class;
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        if (auth()->user()->role !== 'admin') {
-            $data['user_id'] = auth()->id();
-        }
 
-        return $data;
+        return static::getResource()::normalizeOwnership($data);
     }
 }

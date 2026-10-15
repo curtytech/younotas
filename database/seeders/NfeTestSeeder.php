@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\FocusNfeConfigService;
 use Illuminate\Database\Seeder;
 
 class NfeTestSeeder extends Seeder
@@ -27,7 +28,7 @@ class NfeTestSeeder extends Seeder
 
         FocusNfeSetting::firstOrCreate(
             ['user_id' => $user->id],
-            ['settings' => FocusNfeSetting::factory()->make()->settings],
+            ['settings' => FocusNfeConfigService::sanitizeSnapshot(FocusNfeSetting::factory()->make(['user_id' => $user->id])->settings)],
         );
 
         $client = Client::updateOrCreate(
@@ -77,5 +78,7 @@ class NfeTestSeeder extends Seeder
                 'code' => 'SERVICO-TESTE',
             ])->toArray(),
         );
+
+        $this->call(CompanyOwnershipSeeder::class);
     }
 }

@@ -2,16 +2,27 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockMovement extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToCompany;
+
+    protected static function booted(): void
+    {
+        static::saving(function (StockMovement $movement): void {
+            if ($movement->product_id && (int) $movement->product()->value('company_id') !== (int) $movement->company_id) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['product_id' => 'O produto deve pertencer à mesma empresa da movimentação.']);
+            }
+        });
+    }
 
     protected $fillable = [
-        'user_id',
+        'user_id', 'company_id',
         'product_id',
         'movement_type',
         'source_type',

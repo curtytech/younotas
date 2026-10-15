@@ -11,6 +11,20 @@ class ClientFactory extends Factory
 {
     protected $model = Client::class;
 
+    private function uniqueCpf(): string
+    {
+        $digits = (string) fake()->unique()->numberBetween(100000000, 999999999);
+        for ($length = 9; $length < 11; $length++) {
+            $sum = 0;
+            for ($index = 0; $index < $length; $index++) {
+                $sum += (int) $digits[$index] * ($length + 1 - $index);
+            }
+            $remainder = ($sum * 10) % 11;
+            $digits .= $remainder === 10 ? '0' : (string) $remainder;
+        }
+        return $digits;
+    }
+
     public function definition(): array
     {
         return [
@@ -19,7 +33,7 @@ class ClientFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'phone' => '11987654321',
             'document_type' => 'cpf',
-            'document' => '52998224725',
+            'document' => $this->uniqueCpf(),
             'address' => 'Avenida Paulista',
             'address_number' => '1000',
             'address_complement' => 'Sala 10',

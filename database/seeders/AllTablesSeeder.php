@@ -33,6 +33,8 @@ class AllTablesSeeder extends Seeder
                 $this->seedForUser($user);
             }
         }
+
+        $this->call(CompanyOwnershipSeeder::class);
     }
 
     private function seedForUser(User $user): void

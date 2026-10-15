@@ -20,11 +20,11 @@ class UserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
 
-    protected static ?string $modelLabel = 'Empresa';
+    protected static ?string $modelLabel = 'Usuário';
 
-    protected static ?string $pluralModelLabel = 'Empresas';
+    protected static ?string $pluralModelLabel = 'Usuários';
 
-    protected static ?string $navigationLabel = 'Empresas';
+    protected static ?string $navigationLabel = 'Usuários';
 
     protected static ?string $navigationGroup = 'Gerenciamento';
 
@@ -32,6 +32,7 @@ class UserResource extends Resource
     {
         return $form
             ->schema([
+                Forms\Components\Toggle::make('is_active')->label('Acesso ativo')->default(true),
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->string()
@@ -114,7 +115,7 @@ class UserResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\BulkAction::make('deactivate')->label('Desativar acessos')->requiresConfirmation()->action(fn ($records) => $records->each(fn (User $user) => $user->update(['is_active' => false])))->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }
@@ -151,6 +152,6 @@ class UserResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin';
+        return false;
     }
 }

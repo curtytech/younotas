@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\FiscalDocument;
 use App\Models\User;
+use App\Services\FocusNfeConfigService;
 use Illuminate\Database\Seeder;
 
 class FiscalDocumentSeeder extends Seeder
@@ -32,6 +33,7 @@ class FiscalDocumentSeeder extends Seeder
     private function seedForUser(User $user): void
     {
         $issuerDocument = preg_replace('/\D+/', '', (string) $user->cnpj) ?: '28480405000193';
+        $company = app(FocusNfeConfigService::class)->ensureCompanyForUser($user);
         $importedAt = now();
 
         $documents = [
@@ -63,6 +65,7 @@ class FiscalDocumentSeeder extends Seeder
                 ],
                 [
                     'document_type' => $document['document_type'],
+                    'company_id' => $company->id,
                     'provider' => 'focus',
                     'source_type' => null,
                     'source_id' => null,

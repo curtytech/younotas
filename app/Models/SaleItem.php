@@ -44,6 +44,9 @@ class SaleItem extends Model
         'unit_price',
         'discount_amount',
         'tax_amount',
+        'icms_base_calculo',
+        'pis_base_calculo',
+        'cofins_base_calculo',
         'total_amount',
     ];
 
@@ -52,6 +55,9 @@ class SaleItem extends Model
         'unit_price' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
+        'icms_base_calculo' => 'decimal:2',
+        'pis_base_calculo' => 'decimal:2',
+        'cofins_base_calculo' => 'decimal:2',
         'total_amount' => 'decimal:2',
     ];
 

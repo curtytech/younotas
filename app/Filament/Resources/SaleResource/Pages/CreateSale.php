@@ -8,17 +8,16 @@ use Filament\Resources\Pages\CreateRecord;
 
 class CreateSale extends CreateRecord
 {
+    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+
     protected static string $resource = SaleResource::class;
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['number'] = 'TMP-' . uniqid();
 
-        if (auth()->user()->role !== 'admin') {
-            $data['user_id'] = auth()->id();
-        }
 
-        return $data;
+        return static::getResource()::normalizeOwnership($data);
     }
 
     protected function afterCreate(): void

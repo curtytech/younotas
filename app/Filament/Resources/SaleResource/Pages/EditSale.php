@@ -13,15 +13,14 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditSale extends EditRecord
 {
+    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+
     protected static string $resource = SaleResource::class;
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        if (auth()->user()->role !== 'admin') {
-            $data['user_id'] = auth()->id();
-        }
 
-        return $data;
+        return static::getResource()::normalizeOwnership($data, $this->record);
     }
 
     protected function getHeaderActions(): array

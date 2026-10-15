@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ClientResource\Pages;
 use App\Models\Client;
+use App\Models\Company;
 use App\Models\User;
 use App\Services\FocusMunicipioService;
 use Closure;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-class ClientResource extends Resource
+class ClientResource extends CompanyOwnedResource
 {
     protected static ?string $model = Client::class;
 
@@ -38,9 +39,6 @@ class ClientResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
     }
@@ -49,16 +47,7 @@ class ClientResource extends Resource
     {
         return $form
             ->schema([
-                auth()->user()->role === 'admin'
-                    ? Forms\Components\Select::make('user_id')
-                        ->relationship('user', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->default(auth()->id())
-                        ->required()
-                        ->label('Usuário')
-                    : Forms\Components\Hidden::make('user_id')
-                        ->default(auth()->id()),
+                static::companyField(),
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->string()
@@ -72,7 +61,7 @@ class ClientResource extends Resource
                     ->maxLength(255)
                     ->unique(
                         ignoreRecord: true,
-                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                        modifyRuleUsing: fn ($rule, callable $get) => $rule->where('company_id', $get('company_id')),
                     )
                     ->label('E-mail'),
                 Forms\Components\TextInput::make('phone')
@@ -96,6 +85,9 @@ class ClientResource extends Resource
                     ->minLength(3)
                     ->maxLength(15)
                     ->label('Inscrição Estadual'),
+                Forms\Components\Select::make('indicador_ie')->label('Condição perante o ICMS')
+                    ->options(['1' => 'Contribuinte', '2' => 'Contribuinte isento', '9' => 'Não contribuinte'])
+                    ->helperText('Sem escolha explícita, a inscrição estadual cadastrada determina a condição.'),
 
                 Forms\Components\TextInput::make('document')
                     ->required()
@@ -122,7 +114,7 @@ class ClientResource extends Resource
                     ->unique(
                         ignoreRecord: true,
                         modifyRuleUsing: fn ($rule, callable $get) => $rule
-                            ->where('user_id', $get('user_id') ?: auth()->id())
+                            ->where('company_id', $get('company_id'))
                             ->where('document_type', $get('document_type'))
                             ->where('document', static::sanitizeDocument($get('document'), $get('document_type'))),
                     )
@@ -187,7 +179,10 @@ class ClientResource extends Resource
 
     protected static function fillIbgeCode(Get $get, Set $set): void
     {
-        $user = User::find($get('user_id') ?: auth()->id());
+        $user = Company::find($get('company_id'));
+        if (! $user || ! auth()->user()->canAccessCompany($user, 'issue')) {
+            return;
+        }
         $code = app(FocusMunicipioService::class)->ibgeCodeFor($user, $get('city'), $get('state'));
 
         if ($code !== null) {
@@ -256,17 +251,17 @@ class ClientResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->check();
+        return parent::canCreate();
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function getPages(): array
