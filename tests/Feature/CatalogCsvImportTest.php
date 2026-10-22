@@ -5,7 +5,7 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\CatalogCsvImportService;
-use App\Services\FocusMunicipioService;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -21,9 +21,6 @@ beforeEach(function (): void {
     $this->clientsPath = tempnam(sys_get_temp_dir(), 'clients');
     $this->productsPath = tempnam(sys_get_temp_dir(), 'products');
     $this->reportPath = tempnam(sys_get_temp_dir(), 'report');
-    $this->mock(FocusMunicipioService::class, function ($mock): void {
-        $mock->shouldReceive('ibgeCodeFor')->andReturn('3302502');
-    });
 
     $stream = fopen($this->clientsPath, 'w');
     fputcsv($stream, ['Nome', 'CPF', 'CNPJ', 'Email principal', 'Telefone principal', 'Endereco', 'Cidade', 'Estado', 'Status'], ';', '"', '');
@@ -94,4 +91,16 @@ test('contato ausente recebe email provisorio unico e impede ativacao', function
     expect(Client::count())->toBe(2);
     $client->update(['email' => 'real@example.test', 'is_active' => true]);
     expect($client->is_active)->toBeTrue();
+});
+
+test('codigos do IBGE vem da lista local, sem chamada HTTP', function (): void {
+    Http::fake();
+
+    $service = app(CatalogCsvImportService::class);
+    $service->import(2, $this->clientsPath, $this->productsPath, $this->reportPath, true);
+
+    $clients = Client::all();
+    expect($clients)->toHaveCount(2)
+        ->and($clients->pluck('ibge_code')->unique()->all())->toBe(['3302502']);
+    Http::assertNothingSent();
 });
