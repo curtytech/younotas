@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\ServiceResource\Pages;
 use App\Models\Service;
 use Filament\Forms;
@@ -33,7 +35,7 @@ class ServiceResource extends CompanyOwnedResource
             Forms\Components\TextInput::make('code')->maxLength(255)->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, callable $get) => $rule->where('company_id', $get('company_id')))->label('Código'),
             Forms\Components\TextInput::make('name')->required()->minLength(2)->maxLength(255)->label('Nome'),
             Forms\Components\TextInput::make('unit')->required()->default('UN')->maxLength(20)->label('Unidade'),
-            Forms\Components\TextInput::make('unit_price')->numeric()->required()->default(0)->minValue(0)->label('Preço padrão'),
+            MoneyInput::make('unit_price')->numeric()->required()->default(0)->minValue(0)->label('Preço padrão'),
             Forms\Components\TextInput::make('municipal_service_code')->maxLength(255)->label('Código municipal'),
             Forms\Components\TextInput::make('lc116_code')->maxLength(255)->label('Código LC 116'),
             Forms\Components\TextInput::make('cnae_code')->maxLength(255)->label('CNAE'),

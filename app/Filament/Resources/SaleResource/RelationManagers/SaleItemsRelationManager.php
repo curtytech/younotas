@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\SaleResource\RelationManagers;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Models\Product;
 use Closure;
 use Filament\Forms;
@@ -40,7 +42,7 @@ class SaleItemsRelationManager extends RelationManager
                     ->native(false)
                     ->label('Produto')
                     ->live()
-                    ->afterStateUpdated(function ($state, callable $set): void {
+                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                         $product = Product::query()->where('company_id', $this->getOwnerRecord()->company_id)->find($state);
 
                         if (! $product) {
@@ -51,6 +53,7 @@ class SaleItemsRelationManager extends RelationManager
                         $set('product_code', (string) $product->id);
                         $set('unit', $product->unit);
                         $set('unit_price', $product->sale_price);
+                        $set('total_amount', max(round((float) $get('quantity') * (float) $product->sale_price - (float) $get('discount_amount') + (float) $get('tax_amount'), 2), 0));
                     }),
                 Forms\Components\TextInput::make('product_name')
                     ->required()
@@ -108,7 +111,7 @@ class SaleItemsRelationManager extends RelationManager
 
                         $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
                     }),
-                Forms\Components\TextInput::make('unit_price')
+                MoneyInput::make('unit_price')
                     ->numeric()
                     ->required()
                     ->default(0)
@@ -123,7 +126,7 @@ class SaleItemsRelationManager extends RelationManager
 
                         $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
                     }),
-                Forms\Components\TextInput::make('discount_amount')
+                MoneyInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -137,7 +140,7 @@ class SaleItemsRelationManager extends RelationManager
 
                         $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
                     }),
-                Forms\Components\TextInput::make('tax_amount')
+                MoneyInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -151,14 +154,15 @@ class SaleItemsRelationManager extends RelationManager
 
                         $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
                     }),
-                Forms\Components\TextInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                Forms\Components\TextInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                Forms\Components\TextInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                Forms\Components\TextInput::make('total_amount')
+                MoneyInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                MoneyInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                MoneyInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                MoneyInput::make('total_amount')
                     ->numeric()
                     ->required()
                     ->default(0)
                     ->minValue(0)
+                    ->readOnly()
                     ->label('Total'),
             ]);
     }
@@ -182,15 +186,15 @@ class SaleItemsRelationManager extends RelationManager
             ])
             ->filters([])
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                Tables\Actions\CreateAction::make()->after(fn () => $this->dispatch('sale-items-updated')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->after(fn () => $this->dispatch('sale-items-updated')),
+                Tables\Actions\DeleteAction::make()->after(fn () => $this->dispatch('sale-items-updated')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->after(fn () => $this->dispatch('sale-items-updated')),
                 ]),
             ]);
     }

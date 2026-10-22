@@ -22,6 +22,11 @@ class Sale extends Model
     protected static function booted(): void
     {
         static::saving(function (Sale $sale): void {
+            if ($sale->exists) {
+                $sale->subtotal_amount = $sale->calculatedSubtotal();
+                $sale->total_amount = max(round((float) $sale->subtotal_amount - (float) $sale->discount_amount + (float) $sale->tax_amount, 2), 0);
+            }
+
             if ($sale->client_id && (int) $sale->client()->value('company_id') !== (int) $sale->company_id) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['client_id' => 'O cliente deve pertencer à mesma empresa da venda.']);
             }
@@ -89,6 +94,22 @@ class Sale extends Model
         'tax_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
     ];
+
+    public function calculatedSubtotal(): float
+    {
+        return round($this->saleItems()->get()->sum(fn (SaleItem $item): float => max(round(
+            (float) $item->quantity * (float) $item->unit_price
+            - (float) $item->discount_amount + (float) $item->tax_amount,
+            2,
+        ), 0)), 2);
+    }
+
+    public function recalculateTotals(): void
+    {
+        $this->subtotal_amount = $this->calculatedSubtotal();
+        $this->total_amount = max(round((float) $this->subtotal_amount - (float) $this->discount_amount + (float) $this->tax_amount, 2), 0);
+        $this->saveQuietly();
+    }
 
     public function user(): BelongsTo
     {

@@ -59,7 +59,7 @@ beforeEach(function (): void {
         'ibge_code' => '3550308',
         'state' => 'SP',
         'zip_code' => '01234567',
-        'country' => 'Brasil',
+        'country' => 'BR',
         'is_active' => true,
     ]);
 

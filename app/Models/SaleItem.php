@@ -25,6 +25,12 @@ class SaleItem extends Model
                 $saleItem->product_code = (string) $saleItem->product_id;
             }
 
+            $saleItem->total_amount = max(round(
+                (float) $saleItem->quantity * (float) $saleItem->unit_price
+                - (float) $saleItem->discount_amount + (float) $saleItem->tax_amount,
+                2,
+            ), 0);
+
             app(SaleItemStockService::class)->validateBeforeSave($saleItem);
         });
 
@@ -36,7 +42,12 @@ class SaleItem extends Model
             app(SaleItemStockService::class)->handleUpdated($saleItem);
         });
 
+        static::saved(function (SaleItem $saleItem): void {
+            $saleItem->sale?->recalculateTotals();
+        });
+
         static::deleted(function (SaleItem $saleItem): void {
+            $saleItem->sale?->recalculateTotals();
             app(SaleItemStockService::class)->handleDeleted($saleItem);
         });
     }

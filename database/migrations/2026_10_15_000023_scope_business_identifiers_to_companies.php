@@ -18,22 +18,32 @@ return new class extends Migration
     public function up(): void
     {
         foreach ($this->identifiers as $name => $identifiers) {
+            // MySQL may use the composite unique index to back the user_id foreign key.
+            // Keep a dedicated index so the old unique can be dropped.
+            if (! Schema::hasIndex($name, ['user_id'])) {
+                Schema::table($name, fn (Blueprint $table) => $table->index('user_id'));
+            }
+
             foreach ($identifiers as $columns) {
-                Schema::table($name, function (Blueprint $table) use ($columns): void {
-                    $table->dropUnique(array_merge(['user_id'], $columns));
-                    $table->unique(array_merge(['company_id'], $columns));
-                });
+                $this->replaceUnique($name, array_merge(['user_id'], $columns), array_merge(['company_id'], $columns));
             }
         }
+
         // References are scoped to a Focus connection, including in compatibility fields.
-        Schema::table('sales', function (Blueprint $table): void {
-            $table->dropUnique(['focus_nfe_ref']);
-            $table->unique(['focus_nfe_connection_id', 'focus_nfe_ref'], 'sales_fiscal_reference_unique');
-        });
-        Schema::table('service_orders', function (Blueprint $table): void {
-            $table->dropUnique(['focus_nfse_ref']);
-            $table->unique(['focus_nfse_connection_id', 'focus_nfse_ref'], 'service_orders_fiscal_reference_unique');
-        });
+        $this->replaceUnique('sales', ['focus_nfe_ref'], ['focus_nfe_connection_id', 'focus_nfe_ref'], 'sales_fiscal_reference_unique');
+        $this->replaceUnique('service_orders', ['focus_nfse_ref'], ['focus_nfse_connection_id', 'focus_nfse_ref'], 'service_orders_fiscal_reference_unique');
+    }
+
+    /** Idempotent so a run interrupted by a non-transactional DDL engine can be repeated. */
+    private function replaceUnique(string $table, array $old, array $new, ?string $newName = null): void
+    {
+        if (! Schema::hasIndex($table, $new, 'unique')) {
+            Schema::table($table, fn (Blueprint $blueprint) => $blueprint->unique($new, $newName));
+        }
+
+        if (Schema::hasIndex($table, $old, 'unique')) {
+            Schema::table($table, fn (Blueprint $blueprint) => $blueprint->dropUnique($old));
+        }
     }
 
     public function down(): void

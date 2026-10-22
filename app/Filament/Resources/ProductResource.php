@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
 use Filament\Forms;
@@ -149,7 +151,7 @@ class ProductResource extends CompanyOwnedResource
                         'regex' => 'A unidade deve conter apenas letras.',
                     ])
                     ->label('Unidade'),
-                Forms\Components\TextInput::make('cost_price')
+                MoneyInput::make('cost_price')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -157,7 +159,7 @@ class ProductResource extends CompanyOwnedResource
                     ->inputMode('decimal')
                     ->step('0.01')
                     ->label('Preço de custo'),
-                Forms\Components\TextInput::make('sale_price')
+                MoneyInput::make('sale_price')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)

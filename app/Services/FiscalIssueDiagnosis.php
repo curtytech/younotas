@@ -47,6 +47,14 @@ class FiscalIssueDiagnosis
             return $this->result('cancellation', 'O cancelamento foi recusado.', $details, 'Confira o prazo e a justificativa do cancelamento e tente novamente.');
         }
 
+        if (in_array($document->status, [NfeStatus::SENDING, NfeStatus::PROCESSING], true)) {
+            return $this->result('processing', 'A nota está em processamento.', $details, 'Aguarde: a consulta automática atualiza a situação.');
+        }
+
+        if (! in_array($document->status, [NfeStatus::AUTHORIZATION_ERROR, NfeStatus::DENIED], true)) {
+            return $this->result('none', 'Nenhum problema identificado nesta nota.', $details, 'Nenhuma ação necessária.');
+        }
+
         $code = (string) ($response['codigo'] ?? '');
         $summary = $response['mensagem_sefaz'] ?? $response['mensagem'] ?? $error['message'] ?? 'A nota foi rejeitada.';
 

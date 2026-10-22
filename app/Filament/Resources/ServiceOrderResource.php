@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\ServiceOrderResource\Pages;
 use App\Jobs\CancelServiceNfseJob;
 use App\Jobs\ConsultServiceNfseJob;
@@ -68,8 +70,8 @@ class ServiceOrderResource extends CompanyOwnedResource
                 })->label('Serviço'),
                 Forms\Components\Hidden::make('service_name'), Forms\Components\Hidden::make('service_code'), Forms\Components\Hidden::make('description'), Forms\Components\Hidden::make('municipal_service_code'), Forms\Components\Hidden::make('lc116_code'), Forms\Components\Hidden::make('cnae_code'), Forms\Components\Hidden::make('nbs_code'), Forms\Components\Hidden::make('unit'),
                 Forms\Components\TextInput::make('quantity')->numeric()->required()->default(1)->minValue(.001)->label('Quantidade'),
-                Forms\Components\TextInput::make('unit_price')->numeric()->required()->minValue(0)->label('Valor unitário'),
-                Forms\Components\TextInput::make('total_amount')->numeric()->required()->default(0)->label('Total'),
+                MoneyInput::make('unit_price')->numeric()->required()->minValue(0)->label('Valor unitário'),
+                MoneyInput::make('total_amount')->numeric()->required()->default(0)->label('Total'),
                 ...collect(['iss', 'pis', 'cofins', 'inss', 'ir', 'csll'])->map(fn (string $tax) => Forms\Components\Hidden::make("{$tax}_aliquot"))->all(),
             ])->columnSpanFull()->label('Serviços executados'),
             Forms\Components\FileUpload::make('signature_path')->image()->disk('local')->directory('service-orders/signatures')->label('Assinatura do cliente'),

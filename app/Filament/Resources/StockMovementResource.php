@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\StockMovementResource\Pages;
 use App\Models\StockMovement;
 use Filament\Forms;
@@ -89,7 +91,7 @@ class StockMovementResource extends CompanyOwnedResource
                     ->default(0)
                     ->minValue(0)
                     ->label('Saldo atual'),
-                Forms\Components\TextInput::make('unit_cost')
+                MoneyInput::make('unit_cost')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)

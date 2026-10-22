@@ -39,7 +39,7 @@ beforeEach(function (): void {
         'user_id' => $this->user->id, 'name' => 'Cliente Teste', 'email' => 'cliente@nfe.test', 'phone' => '11999999999',
         'document_type' => 'cpf', 'document' => '52998224725',
         'address' => 'Rua B', 'address_number' => '20', 'neighborhood' => 'Centro', 'city' => 'São Paulo',
-        'state' => 'SP', 'zip_code' => '01002000', 'country' => 'Brasil', 'is_active' => true,
+        'state' => 'SP', 'zip_code' => '01002000', 'country' => 'BR', 'is_active' => true,
     ]);
     $product = Product::create([
         'user_id' => $this->user->id, 'name' => 'Produto Teste', 'ncm_code' => '61091000', 'cfop_code' => '5102',

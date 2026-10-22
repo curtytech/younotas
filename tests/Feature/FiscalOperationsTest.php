@@ -140,3 +140,9 @@ test('exportação exige acesso à empresa e parâmetros válidos', function ():
     $this->get(route('fiscal-documents.export', ['company_id' => $company->id, 'environment' => 'homologacao', 'month' => now()->format('Ym')]))->assertForbidden();
     $this->get(route('fiscal-documents.export', ['company_id' => $company->id, 'environment' => 'x', 'month' => '2026']))->assertSessionHasErrors(['environment', 'month']);
 });
+
+test('diagnóstico não chama de rejeição uma nota ainda em processamento', function (): void {
+    $document = operationsDocument(operationsOwner(), ['status' => 'processando', 'last_checked_at' => now()->subMinute()]);
+
+    expect(app(FiscalIssueDiagnosis::class)->explain($document))->toMatchArray(['category' => 'processing']);
+});

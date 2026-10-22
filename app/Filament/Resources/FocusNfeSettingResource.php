@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\FocusNfeSettingResource\Pages;
 use App\Models\FocusNfeSetting;
 use App\Models\Company;
@@ -266,17 +268,17 @@ class FocusNfeSettingResource extends CompanyOwnedResource
                             ->default('49')
                             ->helperText('Simples Nacional: 49 (outras operações de saída). Confirme com o contador.')
                             ->label('Situação tributária COFINS'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_frete')
+                        MoneyInput::make('settings.nfe.valor_frete')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
                             ->label('Valor do frete'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_seguro')
+                        MoneyInput::make('settings.nfe.valor_seguro')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
                             ->label('Valor do seguro'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_outras_despesas')
+                        MoneyInput::make('settings.nfe.valor_outras_despesas')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)

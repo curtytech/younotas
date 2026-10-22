@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource\RelationManagers\SaleItemsRelationManager;
 use App\Jobs\CancelSaleNfeJob;
@@ -196,7 +198,7 @@ class SaleResource extends CompanyOwnedResource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('unit_price')
+                        MoneyInput::make('unit_price')
                             ->numeric()
                             ->required()
                             ->default(0)
@@ -207,7 +209,7 @@ class SaleResource extends CompanyOwnedResource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('discount_amount')
+                        MoneyInput::make('discount_amount')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
@@ -217,7 +219,7 @@ class SaleResource extends CompanyOwnedResource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('tax_amount')
+                        MoneyInput::make('tax_amount')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
@@ -227,10 +229,10 @@ class SaleResource extends CompanyOwnedResource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                        Forms\Components\TextInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                        Forms\Components\TextInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
-                        Forms\Components\TextInput::make('total_amount')
+                        MoneyInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('total_amount')
                             ->numeric()
                             ->required()
                             ->default(0)
@@ -240,7 +242,7 @@ class SaleResource extends CompanyOwnedResource
                             ->label('Total do item'),
                     ])
                     ->columns(12),
-                Forms\Components\TextInput::make('subtotal_amount')
+                MoneyInput::make('subtotal_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -248,27 +250,27 @@ class SaleResource extends CompanyOwnedResource
                     ->live(onBlur: true)
                     ->columnSpan(3)
                     ->label('Subtotal'),
-                Forms\Components\TextInput::make('discount_amount')
+                MoneyInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        static::updateSaleTotals($get('saleItems') ?? [], $get, $set);
+                    ->afterStateUpdated(function ($state, callable $get, callable $set, ?Sale $record): void {
+                        static::updateSaleTotals($get('saleItems') ?? $record?->saleItems()->get()->toArray() ?? [], $get, $set);
                     })
                     ->columnSpan(3)
                     ->label('Desconto'),
-                Forms\Components\TextInput::make('tax_amount')
+                MoneyInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        static::updateSaleTotals($get('saleItems') ?? [], $get, $set);
+                    ->afterStateUpdated(function ($state, callable $get, callable $set, ?Sale $record): void {
+                        static::updateSaleTotals($get('saleItems') ?? $record?->saleItems()->get()->toArray() ?? [], $get, $set);
                     })
                     ->columnSpan(3)
                     ->label('Impostos'),
-                Forms\Components\TextInput::make('total_amount')
+                MoneyInput::make('total_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
