@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\NormalizesOptionalNumbers;
 use App\Services\SaleItemStockService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,6 +11,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SaleItem extends Model
 {
     use HasFactory;
+    use NormalizesOptionalNumbers;
+
+    protected array $optionalNumbers = [
+        'discount_amount',
+        'tax_amount',
+    ];
 
     protected static function booted(): void
     {

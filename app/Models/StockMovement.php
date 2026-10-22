@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\NormalizesOptionalNumbers;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StockMovement extends Model
 {
     use HasFactory;
+    use NormalizesOptionalNumbers;
+
+    protected array $optionalNumbers = [
+        'previous_stock',
+        'current_stock',
+        'unit_cost',
+    ];
 
     protected $fillable = [
         'user_id',

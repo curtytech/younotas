@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\NormalizesOptionalNumbers;
 use App\Services\FiscalDocumentRecorder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Sale extends Model
 {
     use HasFactory;
+    use NormalizesOptionalNumbers;
+
+    protected array $optionalNumbers = [
+        'discount_amount',
+        'tax_amount',
+    ];
 
     protected static function booted(): void
     {
