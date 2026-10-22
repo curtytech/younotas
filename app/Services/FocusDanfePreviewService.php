@@ -210,6 +210,10 @@ class FocusDanfePreviewService
             throw new RuntimeException('O cliente e os produtos devem pertencer à empresa da venda.');
         }
 
+        if ($sale->client->hasProvisionalData()) {
+            throw new RuntimeException('Corrija os dados provisorios do cliente antes de gerar DANFe ou emitir NF-e.');
+        }
+
         if ($sale->saleItems->isEmpty()) {
             throw new RuntimeException('Adicione ao menos um produto na venda para gerar a pré-visualização da DANFe.');
         }

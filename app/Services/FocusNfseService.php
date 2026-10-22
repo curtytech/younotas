@@ -201,7 +201,7 @@ class FocusNfseService
             throw new RuntimeException('O serviço deve estar vinculado a um cliente do mesmo emissor.');
         }
 
-        if (! $client->is_active) {
+        if (! $client->is_active || $client->hasProvisionalData()) {
             throw new RuntimeException('O cliente deve estar ativo para emitir NFS-e.');
         }
 

@@ -8,10 +8,29 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class Client extends Model
 {
     use HasFactory, BelongsToCompany;
+
+    protected static function booted(): void
+    {
+        static::saving(function (Client $client): void {
+            if ($client->is_active && $client->hasProvisionalData()) {
+                throw ValidationException::withMessages([
+                    'is_active' => 'Corrija os dados provisorios antes de ativar o cliente.',
+                ]);
+            }
+        });
+    }
+
+    public function hasProvisionalData(): bool
+    {
+        return str_ends_with(strtolower((string) $this->email), '@cadastro.invalid')
+            || $this->phone === 'Nao informado'
+            || str_starts_with((string) $this->address, 'Endereco provisorio ');
+    }
 
     protected $fillable = [
         'user_id', 'company_id',
@@ -52,5 +71,4 @@ class Client extends Model
     {
         return $this->hasMany(Sale::class);
     }
-
 }

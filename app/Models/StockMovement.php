@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Concerns\NormalizesOptionalNumbers;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockMovement extends Model
 {
-    use HasFactory, BelongsToCompany;
+    use HasFactory, NormalizesOptionalNumbers, BelongsToCompany;
+
+    protected array $optionalNumbers = [
+        'previous_stock',
+        'current_stock',
+        'unit_cost',
+    ];
 
     protected static function booted(): void
     {

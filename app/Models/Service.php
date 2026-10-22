@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Concerns\NormalizesOptionalNumbers;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Service extends Model
 {
-    use HasFactory, BelongsToCompany;
+    use HasFactory, NormalizesOptionalNumbers, BelongsToCompany;
+
+    protected array $optionalNumbers = [
+        'iss_aliquot',
+        'pis_aliquot',
+        'cofins_aliquot',
+        'inss_aliquot',
+        'ir_aliquot',
+        'csll_aliquot',
+    ];
 
     protected $fillable = [
         'user_id', 'company_id',

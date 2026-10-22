@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Concerns\NormalizesOptionalNumbers;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    use HasFactory, BelongsToCompany;
+    use HasFactory, NormalizesOptionalNumbers, BelongsToCompany;
+
+    protected array $optionalNumbers = [
+        'cost_price',
+        'sale_price',
+        'stock_quantity',
+        'minimum_stock',
+        'icms_aliquot',
+        'ipi_aliquot',
+        'pis_aliquot',
+        'cofins_aliquot',
+    ];
 
     protected static function booted(): void
     {
