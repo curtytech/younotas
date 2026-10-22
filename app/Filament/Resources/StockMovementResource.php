@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\StockMovementResource\Pages;
 use App\Models\StockMovement;
 use Filament\Forms;
@@ -12,7 +14,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class StockMovementResource extends Resource
+class StockMovementResource extends CompanyOwnedResource
 {
     protected static ?string $model = StockMovement::class;
 
@@ -32,9 +34,6 @@ class StockMovementResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
     }
@@ -43,20 +42,11 @@ class StockMovementResource extends Resource
     {
         return $form
             ->schema([
-                auth()->user()->role === 'admin'
-                    ? Forms\Components\Select::make('user_id')
-                        ->relationship('user', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->default(auth()->id())
-                        ->required()
-                        ->label('Usuário')
-                    : Forms\Components\Hidden::make('user_id')
-                        ->default(auth()->id()),
+                static::companyField(),
                 Forms\Components\Select::make('product_id')
                     ->relationship('product', 'name', function (Builder $query) {
                         if (auth()->user()->role !== 'admin') {
-                            $query->where('user_id', auth()->id());
+                            $query->visibleTo(auth()->user());
                         }
                     })
                     ->searchable(['name', 'sku', 'barcode'])
@@ -101,7 +91,7 @@ class StockMovementResource extends Resource
                     ->default(0)
                     ->minValue(0)
                     ->label('Saldo atual'),
-                Forms\Components\TextInput::make('unit_cost')
+                MoneyInput::make('unit_cost')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -195,17 +185,17 @@ class StockMovementResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->check();
+        return parent::canCreate();
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function getPages(): array

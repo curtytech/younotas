@@ -25,6 +25,12 @@ class SaleItem extends Model
                 $saleItem->product_code = (string) $saleItem->product_id;
             }
 
+            $saleItem->total_amount = max(round(
+                (float) $saleItem->quantity * (float) $saleItem->unit_price
+                - (float) $saleItem->discount_amount + (float) $saleItem->tax_amount,
+                2,
+            ), 0);
+
             app(SaleItemStockService::class)->validateBeforeSave($saleItem);
         });
 
@@ -36,7 +42,12 @@ class SaleItem extends Model
             app(SaleItemStockService::class)->handleUpdated($saleItem);
         });
 
+        static::saved(function (SaleItem $saleItem): void {
+            $saleItem->sale?->recalculateTotals();
+        });
+
         static::deleted(function (SaleItem $saleItem): void {
+            $saleItem->sale?->recalculateTotals();
             app(SaleItemStockService::class)->handleDeleted($saleItem);
         });
     }
@@ -51,6 +62,9 @@ class SaleItem extends Model
         'unit_price',
         'discount_amount',
         'tax_amount',
+        'icms_base_calculo',
+        'pis_base_calculo',
+        'cofins_base_calculo',
         'total_amount',
     ];
 
@@ -59,6 +73,9 @@ class SaleItem extends Model
         'unit_price' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
+        'icms_base_calculo' => 'decimal:2',
+        'pis_base_calculo' => 'decimal:2',
+        'cofins_base_calculo' => 'decimal:2',
         'total_amount' => 'decimal:2',
     ];
 

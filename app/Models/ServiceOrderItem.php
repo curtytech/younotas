@@ -26,6 +26,11 @@ class ServiceOrderItem extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (ServiceOrderItem $item): void {
+            if ($item->service_id && (int) $item->service?->company_id !== (int) $item->order?->company_id) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'O serviço deve pertencer à mesma empresa da O.S.']);
+            }
+        });
         static::saved(fn (ServiceOrderItem $item) => $item->order?->recalculateTotals());
         static::deleted(fn (ServiceOrderItem $item) => $item->order?->recalculateTotals());
     }

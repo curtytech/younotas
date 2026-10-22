@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\Company;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -19,7 +20,7 @@ class FocusMunicipioService
         protected FocusNfeConfigService $configService,
     ) {}
 
-    public function ibgeCodeFor(?User $user, ?string $city, ?string $state): ?string
+    public function ibgeCodeFor(User|Company|null $user, ?string $city, ?string $state, ?array $config = null): ?string
     {
         $city = trim((string) $city);
         $state = Str::upper(trim((string) $state));
@@ -28,7 +29,12 @@ class FocusMunicipioService
             return null;
         }
 
-        $config = $user ? $this->configService->forUser($user) : config('services.focus_nfe', []);
+        try {
+            $config ??= $user instanceof Company ? $this->configService->forCompany($user)
+                : ($user ? $this->configService->forUser($user) : []);
+        } catch (\RuntimeException) {
+            return null;
+        }
 
         if (blank($config['api_key'] ?? null)) {
             return null;
@@ -67,13 +73,13 @@ class FocusMunicipioService
     /**
      * Preenche o código IBGE de um cliente cadastrado sem ele (ex.: cadastros antigos).
      */
-    public function ensureClientIbgeCode(Client $client): ?string
+    public function ensureClientIbgeCode(Client $client, ?array $config = null): ?string
     {
         if (preg_match('/^\d{7}$/', (string) $client->ibge_code)) {
             return $client->ibge_code;
         }
 
-        $code = $this->ibgeCodeFor($client->user, $client->city, $client->state);
+        $code = $this->ibgeCodeFor($client->company, $client->city, $client->state, $config);
 
         if ($code !== null && $client->exists) {
             $client->forceFill(['ibge_code' => $code])->save();

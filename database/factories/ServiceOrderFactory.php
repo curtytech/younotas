@@ -14,6 +14,6 @@ class ServiceOrderFactory extends Factory
 
     public function definition(): array
     {
-        return ['user_id' => User::factory(), 'client_id' => Client::factory(), 'number' => 'OS-'.fake()->unique()->numerify('######'), 'status' => 'draft', 'total_amount' => 0];
+        return ['user_id' => User::factory(), 'client_id' => fn (array $attributes) => Client::factory()->create(['user_id' => $attributes['user_id'], 'company_id' => $attributes['company_id'] ?? null])->id, 'number' => 'OS-'.fake()->unique()->numerify('######'), 'status' => 'draft', 'total_amount' => 0];
     }
 }

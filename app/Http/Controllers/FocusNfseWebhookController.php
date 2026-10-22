@@ -2,43 +2,39 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\HandleFocusNfseWebhookAction;
+use App\Jobs\ProcessFocusWebhookJob;
+use App\Services\FocusWebhookProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class FocusNfseWebhookController extends Controller
 {
-    public function __invoke(Request $request, HandleFocusNfseWebhookAction $action): JsonResponse
+    public function __invoke(Request $request, FocusWebhookProcessor $processor): JsonResponse
     {
         $secret = (string) config('services.focus_nfe.webhook_secret');
-
         if (blank($secret)) {
             return response()->json(['message' => 'Webhook não configurado.'], 503);
         }
-
-        if (! hash_equals($secret, (string) ($request->header('X-Focus-Nfse-Secret') ?: $request->query('token')))) {
+        $provided = (string) ($request->header('X-Focus-Nfse-Secret') ?: $request->query('token'));
+        if (! hash_equals($secret, $provided)) {
             return response()->json(['message' => 'Não autorizado.'], 401);
         }
 
-        $payload = $request->all();
+        // Query-string credentials must never be persisted with the fiscal event.
+        $payload = $request->json()->all();
         $validator = Validator::make($payload, [
             'ref' => ['nullable', 'string', 'max:255', 'required_without:referencia'],
             'referencia' => ['nullable', 'string', 'max:255', 'required_without:ref'],
             'status' => ['nullable', 'string', 'max:100'],
         ]);
-
         if ($validator->fails()) {
             return response()->json(['message' => 'Payload de webhook inválido.', 'errors' => $validator->errors()], 422);
         }
 
-        $service = $action->execute($payload);
+        $event = $processor->capture('NFS-e', $payload);
+        ProcessFocusWebhookJob::dispatch('NFS-e', $event->id);
 
-        return response()->json([
-            'success' => true,
-            'message' => $service ? 'Webhook NFS-e processado com sucesso.' : 'Webhook recebido para reconciliação.',
-            'service_order_id' => $service?->id,
-            'status' => $service?->focus_nfse_status,
-        ], $service ? 200 : 202);
+        return response()->json(['success' => true, 'message' => 'Webhook persistido para processamento.', 'event_id' => $event->id], 202);
     }
 }

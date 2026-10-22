@@ -18,10 +18,10 @@ class FocusNfeSettingFactory extends Factory
             'settings' => [
                 'environment' => 'homologacao',
                 'api_keys' => [
-                    'homologacao' => (string) config('services.focus_nfe.api_key', ''),
+                    'homologacao' => 'synthetic-focus-homologation-token',
                     'producao' => '',
                 ],
-                'api_password' => (string) config('services.focus_nfe.api_password', ''),
+                'api_password' => '',
                 'prestador' => [
                     'cnpj' => '04252011000110',
                     'inscricao_municipal' => '12345678',

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource\RelationManagers\SaleItemsRelationManager;
 use App\Jobs\CancelSaleNfeJob;
@@ -10,6 +12,7 @@ use App\Jobs\EmitSaleNfeJob;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Support\NfeStatus;
+use App\Services\FiscalEmissionPreparation;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -20,7 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class SaleResource extends Resource
+class SaleResource extends CompanyOwnedResource
 {
     protected static ?string $model = Sale::class;
 
@@ -40,9 +43,6 @@ class SaleResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
     }
@@ -52,21 +52,11 @@ class SaleResource extends Resource
         return $form
             ->columns(12)
             ->schema([
-                auth()->user()->role === 'admin'
-                    ? Forms\Components\Select::make('user_id')
-                        ->relationship('user', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->default(auth()->id())
-                        ->required()
-                        ->columnSpan(3)
-                        ->label('Usuário')
-                    : Forms\Components\Hidden::make('user_id')
-                        ->default(auth()->id()),
+                static::companyField(),
                 Forms\Components\Select::make('client_id')
                     ->relationship('client', 'name', function (Builder $query) {
                         if (auth()->user()->role !== 'admin') {
-                            $query->where('user_id', auth()->id());
+                            $query->visibleTo(auth()->user());
                         }
                     })
                     ->searchable(['name', 'email', 'document'])
@@ -128,7 +118,7 @@ class SaleResource extends Resource
                             ->options(fn (): array => Product::query()
                                 ->when(
                                     auth()->user()->role !== 'admin',
-                                    fn (Builder $query) => $query->where('user_id', auth()->id()),
+                                    fn (Builder $query) => $query->visibleTo(auth()->user()),
                                 )
                                 ->orderBy('name')
                                 ->pluck('name', 'id')
@@ -208,7 +198,7 @@ class SaleResource extends Resource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('unit_price')
+                        MoneyInput::make('unit_price')
                             ->numeric()
                             ->required()
                             ->default(0)
@@ -219,7 +209,7 @@ class SaleResource extends Resource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('discount_amount')
+                        MoneyInput::make('discount_amount')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
@@ -229,7 +219,7 @@ class SaleResource extends Resource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('tax_amount')
+                        MoneyInput::make('tax_amount')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
@@ -239,7 +229,10 @@ class SaleResource extends Resource
                             ->afterStateUpdated(function ($state, callable $get, callable $set): void {
                                 static::updateSaleItemTotal($get, $set);
                             }),
-                        Forms\Components\TextInput::make('total_amount')
+                        MoneyInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
+                        MoneyInput::make('total_amount')
                             ->numeric()
                             ->required()
                             ->default(0)
@@ -249,7 +242,7 @@ class SaleResource extends Resource
                             ->label('Total do item'),
                     ])
                     ->columns(12),
-                Forms\Components\TextInput::make('subtotal_amount')
+                MoneyInput::make('subtotal_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -257,27 +250,27 @@ class SaleResource extends Resource
                     ->live(onBlur: true)
                     ->columnSpan(3)
                     ->label('Subtotal'),
-                Forms\Components\TextInput::make('discount_amount')
+                MoneyInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        static::updateSaleTotals($get('saleItems') ?? [], $get, $set);
+                    ->afterStateUpdated(function ($state, callable $get, callable $set, ?Sale $record): void {
+                        static::updateSaleTotals($get('saleItems') ?? $record?->saleItems()->get()->toArray() ?? [], $get, $set);
                     })
                     ->columnSpan(3)
                     ->label('Desconto'),
-                Forms\Components\TextInput::make('tax_amount')
+                MoneyInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        static::updateSaleTotals($get('saleItems') ?? [], $get, $set);
+                    ->afterStateUpdated(function ($state, callable $get, callable $set, ?Sale $record): void {
+                        static::updateSaleTotals($get('saleItems') ?? $record?->saleItems()->get()->toArray() ?? [], $get, $set);
                     })
                     ->columnSpan(3)
                     ->label('Impostos'),
-                Forms\Components\TextInput::make('total_amount')
+                MoneyInput::make('total_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -350,6 +343,8 @@ class SaleResource extends Resource
                 Tables\Columns\IconColumn::make('issue_invoice')
                     ->boolean()
                     ->label('NF'),
+                Tables\Columns\TextColumn::make('company.name')->label('Empresa'),
+                Tables\Columns\TextColumn::make('focus_nfe_environment')->label('Ambiente da nota')->badge()->formatStateUsing(fn (?string $state): string => $state === 'producao' ? 'Produção' : 'Homologação'),
                 Tables\Columns\TextColumn::make('focus_nfe_status')
                     ->badge()
                     ->placeholder('Não emitida')
@@ -417,18 +412,18 @@ class SaleResource extends Resource
                 Tables\Actions\Action::make('emitir_nfe')
                     ->label(fn (Sale $record): string => NfeStatus::requiresNewReference($record->focus_nfe_status) ? 'Emitir nova NF-e' : 'Emitir NF-e')
                     ->icon('heroicon-o-paper-airplane')
-                    ->visible(fn (Sale $record): bool => NfeStatus::canEmit($record->focus_nfe_status))
+                    ->visible(fn (Sale $record): bool => static::canManageCompanyRecord($record) && app(FiscalEmissionPreparation::class)->canReserve($record))
                     ->requiresConfirmation()
                     ->action(fn (Sale $record): mixed => EmitSaleNfeJob::dispatch($record->id))
                     ->successNotificationTitle('Emissão da NF-e enfileirada.'),
                 Tables\Actions\Action::make('consultar_nfe')
                     ->label('Consultar NF-e')->icon('heroicon-o-arrow-path')
-                    ->visible(fn (Sale $record): bool => filled($record->focus_nfe_ref) && $record->focus_nfe_status === NfeStatus::PROCESSING)
+                    ->visible(fn (Sale $record): bool => static::canManageCompanyRecord($record) && filled($record->focus_nfe_connection_id) && filled($record->focus_nfe_ref) && $record->focus_nfe_status === NfeStatus::PROCESSING)
                     ->action(fn (Sale $record): mixed => ConsultSaleNfeJob::dispatch($record->id))
                     ->successNotificationTitle('Consulta da NF-e enfileirada.'),
                 Tables\Actions\Action::make('cancelar_nfe')
                     ->label('Cancelar NF-e')->icon('heroicon-o-x-circle')->color('danger')
-                    ->visible(fn (Sale $record): bool => NfeStatus::canCancel($record->focus_nfe_status))
+                    ->visible(fn (Sale $record): bool => static::canManageCompanyRecord($record) && filled($record->focus_nfe_connection_id) && NfeStatus::canCancel($record->focus_nfe_status))
                     ->requiresConfirmation()
                     ->form([Forms\Components\Textarea::make('justification')->label('Justificativa')->required()->minLength(15)->maxLength(255)])
                     ->action(fn (Sale $record, array $data): mixed => CancelSaleNfeJob::dispatch($record->id, $data['justification']))
@@ -451,17 +446,17 @@ class SaleResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->check();
+        return parent::canCreate();
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record) && ! $record->fiscalDocuments()->exists();
     }
 
     protected static function updateSaleItemTotal(callable $get, callable $set): void

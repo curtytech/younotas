@@ -13,13 +13,27 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditSale extends EditRecord
 {
+    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+
     protected static string $resource = SaleResource::class;
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        if (auth()->user()->role !== 'admin') {
-            $data['user_id'] = auth()->id();
-        }
+
+        return static::getResource()::normalizeOwnership($data, $this->record);
+    }
+
+    #[\Livewire\Attributes\On('sale-items-updated')]
+    public function refreshSaleTotals(): void
+    {
+        $this->record->refresh();
+        $this->refreshFormData(['subtotal_amount', 'total_amount']);
+    }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['subtotal_amount'] = $this->record->calculatedSubtotal();
+        $data['total_amount'] = max(round($data['subtotal_amount'] - (float) $data['discount_amount'] + (float) $data['tax_amount'], 2), 0);
 
         return $data;
     }

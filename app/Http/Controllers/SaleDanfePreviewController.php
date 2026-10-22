@@ -12,7 +12,7 @@ class SaleDanfePreviewController extends Controller
     public function __invoke(Sale $sale, PreviewSaleDanfeAction $action): Response
     {
         abort_unless(
-            auth()->check() && (auth()->user()->role === 'admin' || $sale->user_id === auth()->id()),
+            auth()->check() && auth()->user()->canAccessCompany((int) $sale->company_id, 'view'),
             403,
         );
 

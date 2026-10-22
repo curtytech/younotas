@@ -52,6 +52,16 @@ return [
         ],
         'retries' => [
             'attempts' => (int) env('FOCUS_NFE_RETRIES', 1),
+            'max_inline_wait_seconds' => (int) env('FOCUS_NFE_MAX_INLINE_WAIT_SECONDS', 5),
+        ],
+        'http' => [
+            'connect_timeout' => (int) env('FOCUS_NFE_CONNECT_TIMEOUT', 5),
+            'timeout' => (int) env('FOCUS_NFE_TIMEOUT', 30),
+        ],
+        'downloads' => [
+            'attempts' => (int) env('FOCUS_NFE_DOWNLOAD_ATTEMPTS', 2),
+            'connect_timeout' => (int) env('FOCUS_NFE_DOWNLOAD_CONNECT_TIMEOUT', 5),
+            'timeout' => (int) env('FOCUS_NFE_DOWNLOAD_TIMEOUT', 120),
         ],
         'prestador' => [
             'cnpj' => env('FOCUS_NFE_PRESTADOR_CNPJ'),

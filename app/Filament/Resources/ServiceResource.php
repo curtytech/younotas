@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\ServiceResource\Pages;
 use App\Models\Service;
 use Filament\Forms;
@@ -11,7 +13,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class ServiceResource extends Resource
+class ServiceResource extends CompanyOwnedResource
 {
     protected static ?string $model = Service::class;
     protected static ?string $navigationIcon = 'heroicon-o-wrench-screwdriver';
@@ -23,19 +25,17 @@ class ServiceResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->when(auth()->user()->role !== 'admin', fn (Builder $q) => $q->where('user_id', auth()->id()));
+        return parent::getEloquentQuery();
     }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            auth()->user()->role === 'admin'
-                ? Forms\Components\Select::make('user_id')->relationship('user', 'name')->searchable()->preload()->default(auth()->id())->required()->label('Emissor')
-                : Forms\Components\Hidden::make('user_id')->default(auth()->id()),
-            Forms\Components\TextInput::make('code')->maxLength(255)->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()))->label('Código'),
+            static::companyField(),
+            Forms\Components\TextInput::make('code')->maxLength(255)->unique(ignoreRecord: true, modifyRuleUsing: fn ($rule, callable $get) => $rule->where('company_id', $get('company_id')))->label('Código'),
             Forms\Components\TextInput::make('name')->required()->minLength(2)->maxLength(255)->label('Nome'),
             Forms\Components\TextInput::make('unit')->required()->default('UN')->maxLength(20)->label('Unidade'),
-            Forms\Components\TextInput::make('unit_price')->numeric()->required()->default(0)->minValue(0)->label('Preço padrão'),
+            MoneyInput::make('unit_price')->numeric()->required()->default(0)->minValue(0)->label('Preço padrão'),
             Forms\Components\TextInput::make('municipal_service_code')->maxLength(255)->label('Código municipal'),
             Forms\Components\TextInput::make('lc116_code')->maxLength(255)->label('Código LC 116'),
             Forms\Components\TextInput::make('cnae_code')->maxLength(255)->label('CNAE'),

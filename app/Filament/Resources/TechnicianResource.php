@@ -14,7 +14,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class TechnicianResource extends Resource
+class TechnicianResource extends CompanyOwnedResource
 {
     protected static ?string $model = Technician::class;
 
@@ -30,13 +30,13 @@ class TechnicianResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->when(auth()->user()->role !== 'admin', fn (Builder $q) => $q->where('user_id', auth()->id()));
+        return parent::getEloquentQuery();
     }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            auth()->user()->role === 'admin' ? Forms\Components\Select::make('user_id')->relationship('user', 'name')->required()->label('Emissor') : Forms\Components\Hidden::make('user_id')->default(auth()->id()),
+            static::companyField(),
             Forms\Components\TextInput::make('name')->required()->maxLength(255),
             Forms\Components\TextInput::make('phone')->tel()->maxLength(30),
             Forms\Components\TextInput::make('email')->email()->maxLength(255),
@@ -57,17 +57,17 @@ class TechnicianResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->check();
+        return parent::canCreate();
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function getPages(): array

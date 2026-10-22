@@ -50,6 +50,8 @@ use App\Jobs\ImportFocusNfeBackupJob;
 use App\Jobs\ImportFocusNfseByReferenceJob;
 use App\Models\Client;
 use App\Models\FocusNfeSetting;
+use App\Models\FiscalDocument;
+use App\Services\FiscalDocumentWorkflow;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\Service;
@@ -222,36 +224,36 @@ test('todos os formulários expõem os campos principais e os componentes repet�
 
     $forms = [
         CreateClient::class => [
-            'user_id', 'name', 'email', 'phone', 'document_type', 'inscricao_estatual',
+            'company_id', 'name', 'email', 'phone', 'document_type', 'inscricao_estatual',
             'document', 'address', 'address_number', 'address_complement', 'neighborhood',
             'city', 'ibge_code', 'state', 'zip_code', 'country', 'is_active',
         ],
         CreateProduct::class => [
-            'user_id', 'sku', 'barcode', 'name', 'description', 'ncm_code', 'cest_code',
+            'company_id', 'sku', 'barcode', 'name', 'description', 'ncm_code', 'cest_code',
             'gtin', 'unit', 'cost_price', 'sale_price', 'stock_quantity', 'minimum_stock',
             'icms_aliquot', 'ipi_aliquot', 'pis_aliquot', 'cofins_aliquot', 'is_active', 'notes',
         ],
         CreateService::class => [
-            'user_id', 'code', 'name', 'unit', 'unit_price', 'municipal_service_code',
+            'company_id', 'code', 'name', 'unit', 'unit_price', 'municipal_service_code',
             'lc116_code', 'cnae_code', 'nbs_code', 'iss_aliquot', 'pis_aliquot',
             'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot', 'description',
             'notes', 'is_active',
         ],
-        CreateTechnician::class => ['user_id', 'name', 'phone', 'email', 'notes', 'is_active'],
+        CreateTechnician::class => ['company_id', 'name', 'phone', 'email', 'notes', 'is_active'],
         CreateServiceOrder::class => [
-            'user_id', 'client_id', 'technician_id', 'status', 'scheduled_for',
+            'company_id', 'client_id', 'technician_id', 'status', 'scheduled_for',
             'problem_description', 'execution_description', 'signature_path', 'signed_by_name', 'notes',
         ],
         CreateSale::class => [
-            'user_id', 'client_id', 'sale_date', 'status', 'payment_status', 'issue_invoice',
+            'company_id', 'client_id', 'sale_date', 'status', 'payment_status', 'issue_invoice',
             'subtotal_amount', 'discount_amount', 'tax_amount', 'total_amount', 'notes',
         ],
         CreateStockMovement::class => [
-            'user_id', 'product_id', 'movement_type', 'source_type', 'reference', 'quantity',
+            'company_id', 'product_id', 'movement_type', 'source_type', 'reference', 'quantity',
             'previous_stock', 'current_stock', 'unit_cost', 'moved_at', 'notes',
         ],
         CreateFocusNfeSetting::class => [
-            'user_id', 'settings.environment', 'settings.api_keys.homologacao', 'settings.api_keys.producao', 'settings.prestador.cnpj',
+            'company_id', 'settings.environment', 'settings.api_keys.homologacao', 'settings.api_keys.producao', 'settings.prestador.cnpj',
             'settings.prestador.inscricao_municipal', 'settings.prestador.codigo_municipio',
             'settings.nfse.natureza_operacao', 'settings.nfse.incentivador_cultural',
             'settings.nfse.optante_simples_nacional', 'settings.nfe.emitente.nome',
@@ -403,12 +405,12 @@ test('selects carregam somente opções válidas para a empresa atual', function
     $this->actingAs($this->admin);
 
     $adminClientFields = Livewire::test(CreateClient::class)->instance()->form->getFlatFields(withHidden: true);
-    $adminUserOptions = $adminClientFields['user_id']->getOptions();
+    $adminUserOptions = $adminClientFields['company_id']->getOptions();
     $settingFields = Livewire::test(CreateFocusNfeSetting::class)->instance()->form->getFlatFields(withHidden: true);
     $userFields = Livewire::test(CreateUser::class)->instance()->form->getFlatFields(withHidden: true);
 
-    expect($hasOption($adminUserOptions, $this->enterprise->id))->toBeTrue()
-        ->and($hasOption($adminUserOptions, $this->otherEnterprise->id))->toBeTrue()
+    expect($hasOption($adminUserOptions, $this->enterprise->fresh()->primary_company_id))->toBeTrue()
+        ->and($hasOption($adminUserOptions, $this->otherEnterprise->fresh()->primary_company_id))->toBeTrue()
         ->and($settingFields['settings.environment']->getOptions())->toHaveKeys(['homologacao', 'producao'])
         ->and($settingFields['settings.nfe.emitente.regime_tributario']->getOptions())->toHaveKeys(['1', '2', '3'])
         ->and($userFields['role']->getOptions())->toHaveKeys(['admin', 'enterprise']);
@@ -657,6 +659,7 @@ test('botões de criação persistem dados e aplicam as regras dos formulários'
 
 test('ações do painel enfileiram os trabalhos corretos', function (): void {
     Bus::fake();
+    FocusNfeSetting::factory()->create(['user_id' => $this->enterprise->id]);
 
     $client = Client::factory()->create(['user_id' => $this->enterprise->id]);
     $sale = Sale::factory()->create([
@@ -681,26 +684,23 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
         ->callAction('emitir_nfe');
 
     Bus::assertDispatched(EmitSaleNfeJob::class, fn (EmitSaleNfeJob $job): bool => $job->saleId === $sale->id);
-
-    $sale->update([
-        'focus_nfe_ref' => 'ui-nfe-ref-001',
-        'focus_nfe_status' => NfeStatus::PROCESSING,
-    ]);
+    $nfeDocument = FiscalDocument::query()->where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
+    app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::PROCESSING], 'consulta');
 
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('consultar_nfe')
         ->callAction('consultar_nfe');
 
-    Bus::assertDispatched(ConsultSaleNfeJob::class, fn (ConsultSaleNfeJob $job): bool => $job->saleId === $sale->id);
+    Bus::assertDispatched(ConsultSaleNfeJob::class, fn (ConsultSaleNfeJob $job): bool => $job->saleId === $sale->id && $job->documentId === $nfeDocument->id);
 
-    $sale->update(['focus_nfe_status' => NfeStatus::AUTHORIZED]);
+    app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::AUTHORIZED], 'consulta');
 
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('cancelar_nfe')
         ->callAction('cancelar_nfe', ['justification' => 'Cancelamento solicitado pelo cliente.']);
 
-    Bus::assertDispatched(CancelSaleNfeJob::class, function (CancelSaleNfeJob $job) use ($sale): bool {
-        return $job->saleId === $sale->id && $job->justification === 'Cancelamento solicitado pelo cliente.';
+    Bus::assertDispatched(CancelSaleNfeJob::class, function (CancelSaleNfeJob $job) use ($sale, $nfeDocument): bool {
+        return $job->saleId === $sale->id && $job->documentId === $nfeDocument->id && $job->justification === 'Cancelamento solicitado pelo cliente.';
     });
 
     Livewire::test(ListServiceOrders::class)
@@ -708,36 +708,42 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
         ->callTableAction('emitir_nfse', $order);
 
     Bus::assertDispatched(EmitServiceNfseJob::class, fn (EmitServiceNfseJob $job): bool => $job->serviceId === $order->id);
+    $nfseDocument = FiscalDocument::query()->where('source_type', ServiceOrder::class)->where('source_id', $order->id)->firstOrFail();
+    app(FiscalDocumentWorkflow::class)->applyResponse($nfseDocument, ['status' => NfseStatus::PROCESSING], 'consulta');
 
-    $order->update(['focus_nfse_status' => NfseStatus::PROCESSING]);
+    $order->refresh();
 
     Livewire::test(ListServiceOrders::class)
         ->assertTableActionVisible('consultar_nfse', $order)
         ->callTableAction('consultar_nfse', $order);
 
-    Bus::assertDispatched(ConsultServiceNfseJob::class, fn (ConsultServiceNfseJob $job): bool => $job->serviceId === $order->id);
+    Bus::assertDispatched(ConsultServiceNfseJob::class, fn (ConsultServiceNfseJob $job): bool => $job->serviceId === $order->id && $job->documentId === $nfseDocument->id);
 
-    $order->update(['focus_nfse_status' => NfseStatus::AUTHORIZED]);
+    app(FiscalDocumentWorkflow::class)->applyResponse($nfseDocument, ['status' => NfseStatus::AUTHORIZED], 'consulta');
+
+    $order->refresh();
 
     Livewire::test(ListServiceOrders::class)
         ->assertTableActionVisible('cancelar_nfse', $order)
-        ->callTableAction('cancelar_nfse', $order);
+        ->callTableAction('cancelar_nfse', $order, ['justification' => 'Cancelamento solicitado pelo cliente.']);
 
-    Bus::assertDispatched(CancelServiceNfseJob::class, fn (CancelServiceNfseJob $job): bool => $job->serviceId === $order->id);
+    Bus::assertDispatched(CancelServiceNfseJob::class, fn (CancelServiceNfseJob $job): bool => $job->serviceId === $order->id && $job->documentId === $nfseDocument->id);
 });
 
 test('botões de importação fiscal validam dados e enfileiram jobs', function (): void {
     Bus::fake();
+    $setting = FocusNfeSetting::factory()->create(['user_id' => $this->enterprise->id]);
+    $connectionId = $setting->company->connections()->where('environment', 'homologacao')->value('id');
     $this->actingAs($this->enterprise);
 
     Livewire::test(ListFiscalDocuments::class)
-        ->callAction('importar_focus_nfe', ['month' => '202601'])
-        ->callAction('importar_focus_nfse', ['reference' => 'nfse-ui-ref-001']);
+        ->callAction('importar_focus_nfe', ['company_id' => $setting->company_id, 'environment' => 'homologacao', 'month' => '202601'])
+        ->callAction('importar_focus_nfse', ['company_id' => $setting->company_id, 'environment' => 'homologacao', 'reference' => 'nfse-ui-ref-001']);
 
-    Bus::assertDispatched(ImportFocusNfeBackupJob::class, function (ImportFocusNfeBackupJob $job): bool {
-        return $job->userId === $this->enterprise->id && $job->month === '202601';
+    Bus::assertDispatched(ImportFocusNfeBackupJob::class, function (ImportFocusNfeBackupJob $job) use ($connectionId): bool {
+        return $job->userId === $this->enterprise->id && $job->month === '202601' && $job->connectionId === $connectionId;
     });
-    Bus::assertDispatched(ImportFocusNfseByReferenceJob::class, function (ImportFocusNfseByReferenceJob $job): bool {
-        return $job->userId === $this->enterprise->id && $job->reference === 'nfse-ui-ref-001';
+    Bus::assertDispatched(ImportFocusNfseByReferenceJob::class, function (ImportFocusNfseByReferenceJob $job) use ($connectionId): bool {
+        return $job->userId === $this->enterprise->id && $job->reference === 'nfse-ui-ref-001' && $job->connectionId === $connectionId;
     });
 });

@@ -5,21 +5,18 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\CatalogCsvImportService;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function (): void {
-    foreach ([
-        '0001_01_01_000000_create_users_table.php',
-        '2026_05_19_000003_create_clients_table.php',
-        '2026_05_19_000005_create_products_table.php',
-        '2026_05_19_000006_create_stock_movements_table.php',
-    ] as $file) {
-        (require database_path('migrations/'.$file))->up();
+    foreach (glob(database_path('migrations/*.php')) as $file) {
+        if (str_contains(basename($file), 'import_clients_')) {
+            continue;
+        }
+
+        (require $file)->up();
     }
-    Schema::table('clients', fn (Blueprint $table) => $table->string('ibge_code', 7)->nullable());
     $this->company = User::findOrFail(2);
     $this->clientsPath = tempnam(sys_get_temp_dir(), 'clients');
     $this->productsPath = tempnam(sys_get_temp_dir(), 'products');
@@ -39,12 +36,7 @@ afterEach(function (): void {
             unlink($path);
         }
     }
-    Schema::dropIfExists('stock_movements');
-    Schema::dropIfExists('products');
-    Schema::dropIfExists('clients');
-    Schema::dropIfExists('password_reset_tokens');
-    Schema::dropIfExists('sessions');
-    Schema::dropIfExists('users');
+    Schema::dropAllTables();
 });
 
 test('migration importa apenas registros validos sem alterar as regras', function (): void {

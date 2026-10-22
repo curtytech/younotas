@@ -100,18 +100,20 @@ test('documento importado sem origem é persistido e isolado por empresa', funct
         ->and($docsB->first()->document_type)->toBe('NFS-e');
 });
 
-test('chave de acesso única por empresa impede duplicidade', function (): void {
+test('chave de acesso única por empresa e ambiente impede duplicidade', function (): void {
     $user = makeUser();
 
     FiscalDocument::factory()->create([
         'user_id' => $user->id,
-        'access_key' => 'NFe35191234567890000123550010000000011000000001',
+        'access_key' => '35191234567890000123550010000000011000000001',
+        'environment' => 'homologacao',
         'focus_reference' => null,
     ]);
 
     expect(fn (): mixed => FiscalDocument::factory()->create([
         'user_id' => $user->id,
-        'access_key' => 'NFe35191234567890000123550010000000011000000001',
+        'access_key' => '35191234567890000123550010000000011000000001',
+        'environment' => 'homologacao',
         'focus_reference' => null,
     ]))->toThrow(QueryException::class);
 });

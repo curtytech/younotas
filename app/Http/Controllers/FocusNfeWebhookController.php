@@ -2,26 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\HandleFocusNfeWebhookAction;
-use App\Jobs\ReconcileFocusNfeWebhooksJob;
+use App\Jobs\ProcessFocusWebhookJob;
+use App\Services\FocusWebhookProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class FocusNfeWebhookController extends Controller
 {
-    public function __invoke(Request $request, HandleFocusNfeWebhookAction $action): JsonResponse
+    public function __invoke(Request $request, FocusWebhookProcessor $processor): JsonResponse
     {
         $secret = (string) config('services.focus_nfe.webhook_secret');
-        $provided = (string) ($request->header('X-Focus-Nfe-Secret') ?: $request->query('token'));
         if (blank($secret)) {
             return response()->json(['message' => 'Webhook não configurado.'], 503);
         }
+        $provided = (string) ($request->header('X-Focus-Nfe-Secret') ?: $request->query('token'));
         if (! hash_equals($secret, $provided)) {
             return response()->json(['message' => 'Não autorizado.'], 401);
         }
 
-        $payload = $request->all();
+        // Query-string credentials must never be persisted with the fiscal event.
+        $payload = $request->json()->all();
         $validator = Validator::make($payload, [
             'ref' => ['nullable', 'string', 'max:255', 'required_without:referencia'],
             'referencia' => ['nullable', 'string', 'max:255', 'required_without:ref'],
@@ -31,17 +32,9 @@ class FocusNfeWebhookController extends Controller
             return response()->json(['message' => 'Payload de webhook inválido.', 'errors' => $validator->errors()], 422);
         }
 
-        $sale = $action->execute($payload);
+        $event = $processor->capture('NF-e', $payload);
+        ProcessFocusWebhookJob::dispatch('NF-e', $event->id);
 
-        if (! $sale && filled($payload['ref'] ?? $payload['referencia'] ?? null)) {
-            ReconcileFocusNfeWebhooksJob::dispatch($payload['ref'] ?? $payload['referencia']);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => $sale ? 'Webhook NF-e processado com sucesso.' : 'Webhook recebido para reconciliação.',
-            'sale_id' => $sale?->id,
-            'status' => $sale?->focus_nfe_status,
-        ], $sale ? 200 : 202);
+        return response()->json(['success' => true, 'message' => 'Webhook persistido para processamento.', 'event_id' => $event->id], 202);
     }
 }

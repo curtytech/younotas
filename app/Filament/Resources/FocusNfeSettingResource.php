@@ -2,8 +2,12 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\FocusNfeSettingResource\Pages;
 use App\Models\FocusNfeSetting;
+use App\Models\Company;
+use App\Services\FiscalReadiness;
 use App\Services\FocusNfeConfigService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -15,7 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 
-class FocusNfeSettingResource extends Resource
+class FocusNfeSettingResource extends CompanyOwnedResource
 {
     protected static ?string $model = FocusNfeSetting::class;
 
@@ -33,11 +37,8 @@ class FocusNfeSettingResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with('user');
+        $query = parent::getEloquentQuery()->with(['company', 'user']);
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
     }
@@ -46,90 +47,60 @@ class FocusNfeSettingResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Responsável')
-                    ->description('Defina a empresa ou usuário ao qual esta configuração pertence.')
+                Forms\Components\Section::make('Empresa emitente')
+                    ->description('A configuração pertence à empresa. Os acessos são gerenciados no cadastro de empresas emitentes.')
+                    ->schema([static::companyField('manage_fiscal')]),
+                Forms\Components\Section::make('Preferências de emissão')
                     ->schema([
-                        auth()->user()->role === 'admin'
-                            ? Forms\Components\Select::make('user_id')
-                                ->relationship('user', 'name')
-                                ->searchable()
-                                ->preload()
-                                ->required()
-                                ->unique(ignoreRecord: true)
-                                ->label('Usuário')
-                            : Forms\Components\Hidden::make('user_id')
-                                ->default(auth()->id()),
-                    ]),
-                Forms\Components\Section::make('API Focus')
-                    ->description('Credenciais e ambiente usados para emitir documentos fiscais.')
-                    ->schema([
-                        Forms\Components\Select::make('settings.environment')
-                            ->required()
-                            ->options([
-                                'homologacao' => 'Homologação (testes, sem valor fiscal)',
-                                'producao' => 'Produção (notas com valor fiscal)',
-                            ])
-                            ->default('homologacao')
-                            ->native(false)
-                            ->live()
-                            ->helperText('Define qual token e qual URL da Focus são usados. Para trocar de ambiente basta mudar aqui.')
-                            ->label('Ambiente em uso')
-                            ->columnSpanFull(),
-                        Forms\Components\Placeholder::make('producao_aviso')
-                            ->hiddenLabel()
+                        Forms\Components\Select::make('settings.environment')->required()->options([
+                            'homologacao' => 'Homologação — testes sem valor fiscal',
+                            'producao' => 'Produção — documentos com valor fiscal',
+                        ])->default('homologacao')->native(false)->live()
+                            ->label('Ambiente padrão para novas emissões')
+                            ->helperText('Notas já enviadas continuam na conexão original. Trocar este padrão não altera notas existentes.'),
+                        Forms\Components\Toggle::make('settings.documents.nfe')->label('Emitir NF-e')->default(true)->live(),
+                        Forms\Components\Toggle::make('settings.documents.nfse')->label('Emitir NFS-e municipal')->default(true)->live(),
+                        Forms\Components\Placeholder::make('production_notice')->hiddenLabel()
                             ->visible(fn (Get $get): bool => $get('settings.environment') === 'producao')
-                            ->content(new HtmlString('<div class="rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">Ambiente de <strong>produção</strong>: as notas emitidas têm valor fiscal e usam a numeração real da empresa.</div>'))
-                            ->columnSpanFull(),
-                        Forms\Components\TextInput::make('settings.api_keys.homologacao')
-                            ->required(fn (Get $get): bool => $get('settings.environment') !== 'producao')
-                            ->string()
-                            ->maxLength(255)
-                            ->label('Token de homologação'),
-                        Forms\Components\TextInput::make('settings.api_keys.producao')
-                            ->required(fn (Get $get): bool => $get('settings.environment') === 'producao')
-                            ->string()
-                            ->maxLength(255)
-                            ->label('Token de produção'),
-                    ])
-                    ->columns(2)
-                    ->collapsible(),
-                Forms\Components\Section::make('Webhooks Focus NFe')
-                    ->icon('heroicon-o-bolt')
-                    ->description('Receba automaticamente as alterações de status das NF-e e NFS-e.')
+                            ->content('Produção gera documentos com valor fiscal. A alteração do ambiente será registrada no histórico de configuração.'),
+                    ]),
+                Forms\Components\Section::make('Prontidão para emitir')
+                    ->description('Pendências de cadastro, credencial e habilitação por ambiente, com base nos dados já salvos.')
+                    ->visible(fn (?FocusNfeSetting $record): bool => (bool) $record?->company)
+                    ->schema([Forms\Components\View::make('filament.fiscal.readiness')
+                        ->viewData(fn (?FocusNfeSetting $record): array => ['checks' => $record?->company ? app(FiscalReadiness::class)->checkAll($record->company) : []])]),
+                Forms\Components\Group::make()->schema([
+                    ...array_map(fn (string $environment, string $label) => Forms\Components\Section::make($label)
+                        ->description($environment === 'producao' ? 'Credencial própria para documentos com valor fiscal.' : 'Credencial própria para testes de integração.')
+                        ->schema([
+                            Forms\Components\Placeholder::make('credential_status_'.$environment)->label('Situação')
+                                ->content(fn (?FocusNfeSetting $record): string => static::hasConfiguredToken($record, $environment) ? 'Credencial cadastrada' : 'Credencial não cadastrada'),
+                            Forms\Components\TextInput::make('settings.api_keys.'.$environment)
+                                ->label('Cadastrar ou substituir token')->password()->autocomplete('new-password')->maxLength(255)
+                                ->required(fn (Get $get, ?FocusNfeSetting $record): bool => $get('settings.environment') === $environment && ! $get('remove_api_keys.'.$environment) && ! static::hasConfiguredToken($record, $environment))
+                                ->helperText('Deixe vazio para manter a credencial cadastrada. O token atual não é exibido.'),
+                            Forms\Components\Toggle::make('remove_api_keys.'.$environment)->label('Remover credencial deste ambiente')->default(false),
+                        ]), ['homologacao', 'producao'], ['Homologação', 'Produção']),
+                ])->columns(2),
+                Forms\Components\Section::make('Integração e notificações')
+                    ->visible(fn (): bool => auth()->user()->role === 'admin')
+                    ->description('Área técnica de integração. As consultas automáticas continuam funcionando sem webhook.')
                     ->schema([
-                        Forms\Components\Placeholder::make('webhook_instrucoes')
-                            ->label('Como configurar')
-                            ->content(new HtmlString(
-                                '<div class="space-y-3 text-sm text-gray-300">'
-                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">1</span><p>Defina <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">FOCUS_NFE_WEBHOOK_SECRET</code> no arquivo <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">.env</code>.</p></div>'
-                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">2</span><p>Cadastre as duas URLs abaixo na configuração de webhooks da Focus NFe.</p></div>'
-                                .'<div class="flex gap-3"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/15 font-semibold text-primary-400">3</span><p>A aplicação precisa estar publicada em uma URL HTTPS acessível pela Focus.</p></div>'
-                                .'<div class="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-amber-200">O webhook atualiza automaticamente a situação, número, link e resposta do documento. Sem webhook, o sistema continua consultando o status pela fila.</div>'
-                                .'</div>'
-                            ))
-                            ->columnSpanFull(),
-                        Forms\Components\Placeholder::make('webhook_url_nfe')
-                            ->label('URL do webhook NF-e')
-                            ->content(fn (): HtmlString => new HtmlString('<div class="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 font-mono text-xs text-gray-300 break-all">'.e(rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfe').'</div>')),
-                        Forms\Components\Placeholder::make('webhook_url_nfse')
-                            ->label('URL do webhook NFS-e')
-                            ->content(fn (): HtmlString => new HtmlString('<div class="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 font-mono text-xs text-gray-300 break-all">'.e(rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfse').'</div>')),
-                        Forms\Components\Placeholder::make('webhook_security')
-                            ->label('Autenticação')
-                            ->content(new HtmlString('<div class="text-sm text-gray-300">A Focus deve enviar o segredo no cabeçalho <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">X-Focus-Nfe-Secret</code> ou no parâmetro <code class="rounded bg-gray-800 px-1.5 py-0.5 text-xs">?token=</code>. Nunca coloque o segredo nas URLs acima.</div>'))
-                            ->columnSpanFull(),
-                    ])
-                    ->columns(2),
-                Forms\Components\Section::make('Prestador NFS-e')
-                    ->description('Dados municipais e tributários usados na emissão de serviços.')
+                        Forms\Components\Placeholder::make('webhook_url_nfe')->label('Webhook NF-e')
+                            ->content(fn (): string => rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfe'),
+                        Forms\Components\Placeholder::make('webhook_url_nfse')->label('Webhook NFS-e')
+                            ->content(fn (): string => rtrim((string) config('app.url'), '/').'/api/webhooks/focus-nfse'),
+                    ]),
+                Forms\Components\Section::make('Identificação do emitente')
+                    ->description('Identificação comum da empresa e dados municipais para emissão de serviços.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.prestador.cnpj')
                             ->required()
                             ->string()
                             ->maxLength(18)
-                            ->label('CNPJ do prestador'),
+                            ->label('CNPJ do emitente'),
                         Forms\Components\TextInput::make('settings.prestador.inscricao_municipal')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfse') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Inscrição municipal'),
@@ -139,7 +110,7 @@ class FocusNfeSettingResource extends Resource
                             ->maxLength(20)
                             ->label('Código do município'),
                         Forms\Components\TextInput::make('settings.nfse.natureza_operacao')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfse') !== false)
                             ->string()
                             ->maxLength(20)
                             ->default('1')
@@ -157,52 +128,52 @@ class FocusNfeSettingResource extends Resource
                     ->description('Dados cadastrais exibidos como emitente na NF-e.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.nfe.emitente.nome')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Razão social'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.nome_fantasia')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Nome fantasia'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.logradouro')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Logradouro'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.numero')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(20)
                             ->label('Número'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.bairro')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Bairro'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.municipio')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Município'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.uf')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->length(2)
                             ->label('UF'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.cep')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(10)
                             ->label('CEP'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.inscricao_estadual')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->label('Inscrição estadual'),
                         Forms\Components\Select::make('settings.nfe.emitente.regime_tributario')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->options([
                                 '1' => 'Simples Nacional',
                                 '2' => 'Simples Nacional - excesso de sublimite',
@@ -218,95 +189,96 @@ class FocusNfeSettingResource extends Resource
                     ->description('Parâmetros fiscais padrão para vendas de mercadorias.')
                     ->schema([
                         Forms\Components\TextInput::make('settings.nfe.natureza_operacao')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(255)
                             ->default('VENDA DE MERCADORIA')
                             ->label('Natureza da operação'),
                         Forms\Components\TextInput::make('settings.nfe.tipo_documento')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(1)
                             ->label('Tipo do documento'),
                         Forms\Components\TextInput::make('settings.nfe.local_destino')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(1)
                             ->label('Local do destino'),
                         Forms\Components\TextInput::make('settings.nfe.finalidade_emissao')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(1)
                             ->label('Finalidade da emissão'),
                         Forms\Components\TextInput::make('settings.nfe.consumidor_final')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(1)
                             ->label('Consumidor final'),
                         Forms\Components\TextInput::make('settings.nfe.presenca_comprador')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(1)
                             ->label('Presença do comprador'),
                         Forms\Components\TextInput::make('settings.nfe.modalidade_frete')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
                             ->default(9)
                             ->label('Modalidade do frete'),
                         Forms\Components\TextInput::make('settings.nfe.forma_pagamento')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(2)
                             ->default('01')
                             ->label('Forma de pagamento'),
                         Forms\Components\TextInput::make('settings.nfe.cfop_padrao')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(10)
                             ->default('5102')
                             ->helperText('Usado quando o produto não tem CFOP próprio. Informe o CFOP dentro do estado; vendas para outra UF usam 6xxx automaticamente.')
                             ->label('CFOP padrão'),
+                        Forms\Components\TextInput::make('settings.nfe.cfop_interestadual_padrao')->label('CFOP interestadual padrão')->regex('/^6[0-9]{3}$/')->maxLength(4),
                         Forms\Components\TextInput::make('settings.nfe.codigo_ncm_padrao')
                             ->string()
                             ->maxLength(8)
                             ->label('NCM padrão'),
                         Forms\Components\TextInput::make('settings.nfe.icms_origem')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(5)
                             ->default('0')
                             ->label('Origem ICMS'),
                         Forms\Components\TextInput::make('settings.nfe.icms_situacao_tributaria')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(5)
                             ->default('102')
                             ->label('Situação tributária ICMS'),
                         Forms\Components\TextInput::make('settings.nfe.pis_situacao_tributaria')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(5)
                             ->default('49')
                             ->helperText('Simples Nacional: 49 (outras operações de saída). Confirme com o contador.')
                             ->label('Situação tributária PIS'),
                         Forms\Components\TextInput::make('settings.nfe.cofins_situacao_tributaria')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(5)
                             ->default('49')
                             ->helperText('Simples Nacional: 49 (outras operações de saída). Confirme com o contador.')
                             ->label('Situação tributária COFINS'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_frete')
+                        MoneyInput::make('settings.nfe.valor_frete')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
                             ->label('Valor do frete'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_seguro')
+                        MoneyInput::make('settings.nfe.valor_seguro')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
                             ->label('Valor do seguro'),
-                        Forms\Components\TextInput::make('settings.nfe.valor_outras_despesas')
+                        MoneyInput::make('settings.nfe.valor_outras_despesas')
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
@@ -321,14 +293,12 @@ class FocusNfeSettingResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
-                    ->label('Usuário')
-                    ->visible(auth()->user()->role === 'admin'),
+                Tables\Columns\TextColumn::make('company.name')->label('Empresa emitente')->searchable(),
                 Tables\Columns\TextColumn::make('settings.prestador.cnpj')
                     ->label('CNPJ'),
                 Tables\Columns\TextColumn::make('settings.environment')
                     ->getStateUsing(fn ($record): string => FocusNfeConfigService::normalizeSettings($record->settings ?? [])['environment'] === 'producao' ? 'Produção' : 'Homologação')
-                    ->label('Ambiente'),
+                    ->label('Padrão para novas emissões'),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime('d/m/Y H:i')
                     ->sortable()
@@ -355,26 +325,23 @@ class FocusNfeSettingResource extends Resource
         ];
     }
 
+    public static function hasConfiguredToken(?FocusNfeSetting $record, string $environment): bool
+    {
+        return $record?->company?->connections()->where('environment', $environment)->where('enabled', true)->get()->contains(fn ($connection): bool => filled($connection->api_key)) ?? false;
+    }
+
     public static function canCreate(): bool
     {
-        if (! auth()->check()) {
-            return false;
-        }
-
-        if (auth()->user()->role === 'admin') {
-            return true;
-        }
-
-        return ! static::getEloquentQuery()->where('user_id', auth()->id())->exists();
+        return auth()->check() && (auth()->user()->role === 'admin' || static::companyOptions('manage_fiscal') !== []);
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record, 'manage_fiscal');
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin';
+        return false;
     }
 }

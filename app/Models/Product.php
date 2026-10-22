@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use App\Models\Concerns\NormalizesOptionalNumbers;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,8 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    use HasFactory;
-    use NormalizesOptionalNumbers;
+    use HasFactory, NormalizesOptionalNumbers, BelongsToCompany;
 
     protected array $optionalNumbers = [
         'cost_price',
@@ -42,7 +43,7 @@ class Product extends Model
     }
 
     protected $fillable = [
-        'user_id',
+        'user_id', 'company_id',
         'code',
         'sku',
         'barcode',
@@ -51,6 +52,10 @@ class Product extends Model
         'ncm_code',
         'cst_code',
         'cfop_code',
+        'cfop_interestadual',
+        'icms_origem',
+        'pis_cst',
+        'cofins_cst',
         'cest_code',
         'gtin',
         'unit',

@@ -34,7 +34,7 @@ function nfeXml(string $accessKey, string $issuerCnpj = '28480405000193'): strin
         <infNFe Id="NFe{$accessKey}" versao="4.00">
           <ide>
             <cUF>35</cUF><nNF>1504</nNF><serie>1</serie>
-            <dhEmi>2026-01-10T10:00:00-03:00</dhEmi><tpAmb>1</tpAmb>
+            <dhEmi>2026-01-10T10:00:00-03:00</dhEmi><tpAmb>2</tpAmb>
           </ide>
           <emit><CNPJ>{$issuerCnpj}</CNPJ><xNome>EMITENTE LTDA</xNome></emit>
           <dest><CNPJ>04252011000110</CNPJ><xNome>DESTINATARIO LTDA</xNome></dest>
@@ -143,6 +143,10 @@ test('importa NFS-e por referência e vincula à ordem de serviço', function ()
     ]);
     $serviceOrder = ServiceOrder::create([
         'user_id' => $user->id, 'client_id' => $client->id, 'number' => 'OS-0001',
+        'company_id' => $client->company_id,
+        'focus_nfse_connection_id' => app(\App\Services\FocusNfeConfigService::class)->forUser($user)['fiscal_connection_id'],
+        'focus_nfse_environment' => 'homologacao',
+        'focus_nfse_configuration_snapshot' => \App\Services\FiscalEmissionPreparation::snapshot(app(\App\Services\FocusNfeConfigService::class)->forUser($user)),
         'status' => 'completed', 'focus_nfse_ref' => 'nfse-ref-123',
         'focus_nfse_status' => 'autorizado', 'total_amount' => 500,
     ]);
@@ -167,6 +171,6 @@ test('importa NFS-e por referência e vincula à ordem de serviço', function ()
         ->and($document->focus_reference)->toBe('nfse-ref-123')
         ->and($document->source_type)->toBe(ServiceOrder::class)
         ->and($document->source_id)->toBe($serviceOrder->id)
-        ->and($document->metadata['origin'])->toBe('focus_individual')
+        ->and($document->metadata['origin'])->toBe('emitted')
         ->and($document->isLinked())->toBeTrue();
 });

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Forms\Components\MoneyInput;
+
 use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
 use Filament\Forms;
@@ -12,7 +14,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class ProductResource extends Resource
+class ProductResource extends CompanyOwnedResource
 {
     protected static ?string $model = Product::class;
 
@@ -32,9 +34,6 @@ class ProductResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        if (auth()->user()->role !== 'admin') {
-            $query->where('user_id', auth()->id());
-        }
 
         return $query;
     }
@@ -43,16 +42,7 @@ class ProductResource extends Resource
     {
         return $form
             ->schema([
-                auth()->user()->role === 'admin'
-                    ? Forms\Components\Select::make('user_id')
-                        ->relationship('user', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->default(auth()->id())
-                        ->required()
-                        ->label('Usuário')
-                    : Forms\Components\Hidden::make('user_id')
-                        ->default(auth()->id()),
+                static::companyField(),
                 // Forms\Components\TextInput::make('code')
                 //     ->required()
                 //     ->string()
@@ -62,7 +52,7 @@ class ProductResource extends Resource
                 //     ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null)
                 //     ->unique(
                 //         ignoreRecord: true,
-                //         modifyRuleUsing: fn ($rule, callable $get) => $rule->where('user_id', $get('user_id') ?: auth()->id()),
+                //         modifyRuleUsing: fn ($rule, callable $get) => $rule->where('company_id', $get('company_id')),
                 //     )
                 //     ->validationMessages([
                 //         'regex' => 'O codigo deve conter apenas letras, numeros, ponto, barra, underscore ou hifen.',
@@ -113,7 +103,7 @@ class ProductResource extends Resource
                     ->length(4)
                     ->rule('regex:/^[56]\\d{3}$/')
                     ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? preg_replace('/\D/', '', $state) : null)
-                    ->helperText('CFOP de venda dentro do estado (ex.: 5102). Para clientes de outra UF o sistema troca para 6xxx automaticamente. Vazio usa o CFOP padrão da Configuração Fiscal.')
+                    ->helperText('CFOP para operações internas (ex.: 5102). Para outra UF, configure o campo de CFOP interestadual.')
                     ->validationMessages([
                         'regex' => 'O CFOP deve ter 4 números e começar com 5 ou 6.',
                     ])
@@ -139,6 +129,16 @@ class ProductResource extends Resource
                         'regex' => 'O GTIN deve conter 8, 12, 13 ou 14 numeros.',
                     ])
                     ->label('GTIN'),
+                Forms\Components\TextInput::make('cfop_interestadual')->label('CFOP interestadual')->regex('/^6[0-9]{3}$/')->maxLength(4)
+                    ->helperText('Informe o código aprovado para a operação. O sistema não altera automaticamente o prefixo do CFOP.'),
+                Forms\Components\Select::make('icms_origem')->label('Origem da mercadoria')->options([
+                    '0' => '0 — Nacional', '1' => '1 — Estrangeira, importação direta', '2' => '2 — Estrangeira, adquirida no mercado interno',
+                    '3' => '3 — Nacional, conteúdo importado acima de 40%', '4' => '4 — Nacional, processos produtivos básicos',
+                    '5' => '5 — Nacional, conteúdo importado até 40%', '6' => '6 — Estrangeira, importação direta sem similar nacional',
+                    '7' => '7 — Estrangeira, mercado interno sem similar nacional', '8' => '8 — Nacional, conteúdo importado acima de 70%',
+                ]),
+                Forms\Components\TextInput::make('pis_cst')->label('CST PIS do produto')->regex('/^[0-9]{2}$/')->maxLength(2),
+                Forms\Components\TextInput::make('cofins_cst')->label('CST COFINS do produto')->regex('/^[0-9]{2}$/')->maxLength(2),
                 Forms\Components\TextInput::make('unit')
                     ->default('UN')
                     ->required()
@@ -151,7 +151,7 @@ class ProductResource extends Resource
                         'regex' => 'A unidade deve conter apenas letras.',
                     ])
                     ->label('Unidade'),
-                Forms\Components\TextInput::make('cost_price')
+                MoneyInput::make('cost_price')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -159,7 +159,7 @@ class ProductResource extends Resource
                     ->inputMode('decimal')
                     ->step('0.01')
                     ->label('Preço de custo'),
-                Forms\Components\TextInput::make('sale_price')
+                MoneyInput::make('sale_price')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
@@ -283,17 +283,17 @@ class ProductResource extends Resource
 
     public static function canCreate(): bool
     {
-        return auth()->check();
+        return parent::canCreate();
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()->role === 'admin' || $record->user_id === auth()->id();
+        return static::canManageCompanyRecord($record);
     }
 
     public static function getPages(): array

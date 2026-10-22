@@ -11,7 +11,9 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\FiscalEmissionPreparation;
 use App\Services\FocusDanfePreviewService;
+use App\Services\FocusNfeConfigService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -37,7 +39,7 @@ beforeEach(function (): void {
         'user_id' => $this->user->id, 'name' => 'Cliente Teste', 'email' => 'cliente@nfe.test', 'phone' => '11999999999',
         'document_type' => 'cpf', 'document' => '52998224725',
         'address' => 'Rua B', 'address_number' => '20', 'neighborhood' => 'Centro', 'city' => 'São Paulo',
-        'state' => 'SP', 'zip_code' => '01002000', 'country' => 'Brasil', 'is_active' => true,
+        'state' => 'SP', 'zip_code' => '01002000', 'country' => 'BR', 'is_active' => true,
     ]);
     $product = Product::create([
         'user_id' => $this->user->id, 'name' => 'Produto Teste', 'ncm_code' => '61091000', 'cfop_code' => '5102',
@@ -52,6 +54,13 @@ beforeEach(function (): void {
         'sale_id' => $sale->id, 'product_id' => $product->id, 'product_name' => $product->name, 'product_code' => (string) $product->id,
         'unit' => 'UN', 'quantity' => 1, 'unit_price' => 100, 'total_amount' => 100,
     ]);
+    $config = app(FocusNfeConfigService::class)->forUser($this->user);
+    $sale->forceFill([
+        'focus_nfe_connection_id' => $config['fiscal_connection_id'],
+        'focus_nfe_environment' => $config['environment'],
+        'focus_nfe_configuration_snapshot' => FiscalEmissionPreparation::snapshot($config),
+    ])->save();
+    Queue::fake([ConsultSaleNfeJob::class]);
     $this->sale = $sale->fresh();
 });
 
@@ -96,10 +105,10 @@ test('processa webhook de NF-e de forma idempotente', function (): void {
     ];
 
     $this->postJson('/api/webhooks/focus-nfe?token=webhook-test-secret', $payload)
-        ->assertOk()
-        ->assertJson(['success' => true, 'status' => 'autorizado']);
+        ->assertStatus(202)
+        ->assertJson(['success' => true]);
     $this->postJson('/api/webhooks/focus-nfe?token=webhook-test-secret', $payload)
-        ->assertOk();
+        ->assertStatus(202);
 
     expect($this->sale->refresh()->focus_nfe_status)->toBe('autorizado')
         ->and($this->sale->focus_nfe_number)->toBe('123')
@@ -107,8 +116,9 @@ test('processa webhook de NF-e de forma idempotente', function (): void {
         ->and(FocusNfeWebhookEvent::where('reference', 'sale-webhook-001')->count())->toBe(1);
 });
 
-test('converte CFOP interno em interestadual para destinatário de outra UF', function (): void {
+test('usa CFOP interestadual configurado para destinatário de outra UF', function (): void {
     $this->sale->client->update(['state' => 'RJ']);
+    $this->sale->saleItems->first()->product->update(['cfop_interestadual' => '6102']);
 
     $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh());
 
@@ -206,13 +216,17 @@ test('consulta grava o link da DANFE retornado como caminho relativo', function 
     expect($this->sale->refresh()->focus_nfe_url)->toBe('https://homologacao.focusnfe.com.br/arquivos/danfe.pdf');
 });
 
-test('converte qualquer CFOP de saída conforme a UF do destinatário', function (): void {
+test('exige CFOP explícito para cada destino sem conversão indiscriminada', function (): void {
     Http::fake(['https://homologacao.focusnfe.com.br/v2/municipios*' => Http::response([], 200)]);
     $this->sale->saleItems->first()->product->update(['cfop_code' => '5405']);
     $this->sale->client->update(['state' => 'RJ']);
-    expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh())['items'][0]['cfop'])->toBe('6405');
+    expect(fn () => app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh()))
+        ->toThrow(RuntimeException::class, 'CFOP interestadual explícito');
 
-    $this->sale->saleItems->first()->product->update(['cfop_code' => '6102']);
+    $this->sale->saleItems->first()->product->update(['cfop_interestadual' => '6404']);
+    expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh())['items'][0]['cfop'])->toBe('6404');
+
+    $this->sale->saleItems->first()->product->update(['cfop_code' => '5102']);
     $this->sale->client->update(['state' => 'SP']);
     expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh())['items'][0]['cfop'])->toBe('5102');
 });
