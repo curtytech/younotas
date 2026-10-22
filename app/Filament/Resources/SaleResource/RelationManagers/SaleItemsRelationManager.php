@@ -20,6 +20,10 @@ class SaleItemsRelationManager extends RelationManager
 
     protected static ?string $title = 'Itens da Venda';
 
+    protected static ?string $modelLabel = 'Item da venda';
+
+    protected static ?string $pluralModelLabel = 'Itens da venda';
+
 
     public function isReadOnly(): bool
     {
