@@ -9,15 +9,12 @@ use App\Models\User;
 use App\Support\FiscalDocument;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 class CatalogCsvImportService
 {
-    public function __construct(private FocusMunicipioService $municipioService) {}
-
     public function import(string|int $companyName, string $clientsPath, string $productsPath, string $reportPath, bool $fillMissing = false): array
     {
         $clients = $this->read($clientsPath, ['Nome', 'CPF', 'CNPJ', 'Email principal']);
@@ -31,28 +28,13 @@ class CatalogCsvImportService
         $user = $companies->first();
         $municipalities = [];
         $report = ['user_id' => $user->id, 'clients' => [], 'products' => []];
+        $official = $this->officialMunicipalityCodes();
 
-        // Resolve each municipality once, outside the database transaction.
         foreach ($clients as $row) {
             $city = $row['Cidade'] ?? '';
             $state = $row['Estado'] ?? '';
             $key = $city.'|'.$state;
-            if (! array_key_exists($key, $municipalities)) {
-                $municipalities[$key] = $this->municipioService->ibgeCodeFor($user, $city, $state);
-            }
-        }
-
-        if ($fillMissing && in_array(null, $municipalities, true)) {
-            $response = Http::acceptJson()->connectTimeout(10)->timeout(60)->retry(2, 500)
-                ->get('https://servicodados.ibge.gov.br/api/v1/localidades/municipios', ['view' => 'nivelado'])->throw();
-            $official = [];
-            foreach ($response->json() as $city) {
-                $key = Str::upper(Str::ascii($city['municipio-nome'].'|'.$city['UF-sigla']));
-                $official[$key] = (string) $city['municipio-id'];
-            }
-            foreach ($municipalities as $key => $code) {
-                $municipalities[$key] = $code ?? ($official[Str::upper(Str::ascii($key))] ?? null);
-            }
+            $municipalities[$key] = $official[Str::upper(Str::ascii($key))] ?? null;
         }
 
         DB::transaction(function () use ($user, $clients, $products, $municipalities, &$report, $reportPath, $fillMissing): void {
@@ -69,6 +51,35 @@ class CatalogCsvImportService
         });
 
         return $report;
+    }
+
+    /**
+     * Codigos oficiais do IBGE por "CIDADE|UF" sem acentos, lidos do snapshot local.
+     * Para atualizar, regenere
+     * database/data/municipios-ibge.json a partir da tabela do IBGE.
+     *
+     * @return array<string, string>
+     */
+    private function officialMunicipalityCodes(): array
+    {
+        $path = database_path('data/municipios-ibge.json');
+
+        if (! is_file($path) || ! is_readable($path)) {
+            throw new RuntimeException('Lista de municipios do IBGE ausente ou ilegivel: '.$path);
+        }
+
+        $rows = json_decode(File::get($path), true, flags: JSON_THROW_ON_ERROR);
+
+        $official = [];
+        foreach ($rows as $row) {
+            $code = (string) ($row['codigo_ibge'] ?? '');
+            if (! preg_match('/^\d{7}$/', $code) || blank($row['nome'] ?? null) || blank($row['uf'] ?? null)) {
+                continue;
+            }
+            $official[Str::upper(Str::ascii($row['nome'].'|'.$row['uf']))] = $code;
+        }
+
+        return $official;
     }
 
     private function read(string $path, array $required): array

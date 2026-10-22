@@ -21,6 +21,24 @@ Laravel is a web application framework with expressive, elegant syntax. We belie
 
 Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
+## Instalação
+
+Em um clone novo, dentro da pasta do projeto:
+
+```bash
+cp .env.example .env
+composer install
+php artisan key:generate
+touch database/database.sqlite
+bun install
+bun run build
+php artisan migrate --seed
+php artisan storage:link
+php artisan filament:assets
+```
+
+As migrações `2026_10_18_000024` e `2026_10_18_000025` importam clientes e produtos dos CSVs em `database/migrations`. Os códigos IBGE vêm apenas do snapshot local `database/data/municipios-ibge.json`, então o setup não faz chamadas externas. Para atualizar o arquivo, baixe a tabela de códigos de municípios do IBGE e regenere o JSON no mesmo formato (`nome`, `uf`, `codigo_ibge`).
+
 ## Changelog
 
 ### [0.1.0] - 2026-08-02
