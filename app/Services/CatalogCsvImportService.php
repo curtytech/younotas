@@ -136,7 +136,7 @@ class CatalogCsvImportService
         $data = [
             'user_id' => $user->id,
             'name' => ($row['Razao Social'] ?? '') ?: $row['Nome'],
-            'email' => Str::lower(($row['Email principal'] ?? '') ?: ($row['E-mail Contato'] ?? '')),
+            'email' => Str::lower(($row['Email principal'] ?? '') ?: ($row['E-mail Contato'] ?? '')) ?: null,
             'phone' => $row['Telefone principal'] ?? '',
             'document_type' => $type,
             'document' => $document,
@@ -156,7 +156,6 @@ class CatalogCsvImportService
         if ($fillMissing) {
             $sourceKey = substr(hash('sha256', json_encode($row, JSON_THROW_ON_ERROR)), 0, 24);
             foreach ([
-                'email' => "cliente-{$user->id}-{$sourceKey}@cadastro.invalid",
                 'phone' => 'Nao informado',
                 'address' => 'Endereco provisorio '.$sourceKey,
             ] as $field => $value) {
@@ -171,7 +170,7 @@ class CatalogCsvImportService
         }
         $errors = Validator::make($data, [
             'name' => ['required', 'string', 'min:3', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['required', 'string', 'min:8', 'max:30'],
             'document' => ['required', 'string', 'min:3', 'max:255'],
             'inscricao_estatual' => ['nullable', 'string', 'min:3', 'max:15'],
@@ -196,9 +195,10 @@ class CatalogCsvImportService
             return ['line' => $line, 'status' => 'rejected', 'fields' => array_values(array_unique($errors))];
         }
         $existing = Client::query()->where('user_id', $user->id)->where(function ($query) use ($data): void {
-            $query->where('email', $data['email'])->orWhere(function ($query) use ($data): void {
-                $query->where('document_type', $data['document_type'])->where('document', $data['document']);
-            });
+            $query->when(filled($data['email']), fn ($query) => $query->where('email', $data['email']))
+                ->orWhere(function ($query) use ($data): void {
+                    $query->where('document_type', $data['document_type'])->where('document', $data['document']);
+                });
         })->exists();
         if ($existing) {
             return ['line' => $line, 'status' => 'skipped', 'fields' => ['email_or_document']];

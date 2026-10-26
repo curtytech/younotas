@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Services\CatalogCsvImportService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Validation\ValidationException;
 
 beforeEach(function (): void {
     foreach (glob(database_path('migrations/*.php')) as $file) {
@@ -51,7 +50,7 @@ test('migration importa apenas registros validos sem alterar as regras', functio
     $product = Product::firstOrFail();
     $report = json_decode(file_get_contents($this->reportPath), true, flags: JSON_THROW_ON_ERROR);
 
-    expect(Client::count())->toBe(1)
+    expect(Client::count())->toBe(2)
         ->and($client->user_id)->toBe($this->company->id)
         ->and($client->document)->toBe('52998224725')
         ->and($client->ibge_code)->toBe('3302502')
@@ -61,12 +60,12 @@ test('migration importa apenas registros validos sem alterar as regras', functio
         ->and($product->sale_price)->toBe('1234.56')
         ->and($product->stock_quantity)->toBe('2.500')
         ->and(StockMovement::count())->toBe(1)
-        ->and($report['clients'][1]['status'])->toBe('rejected')
-        ->and($report['clients'][1]['fields'])->toContain('email');
+        ->and($report['clients'][1]['status'])->toBe('created')
+        ->and(Client::where('name', 'Cliente sem email')->firstOrFail()->email)->toBeNull();
 
     $product->update(['stock_quantity' => 1]);
     $service->import(2, $this->clientsPath, $this->productsPath, $this->reportPath);
-    expect(Client::count())->toBe(1)->and(Product::count())->toBe(1)
+    expect(Client::count())->toBe(2)->and(Product::count())->toBe(1)
         ->and(StockMovement::count())->toBe(1)
         ->and($product->fresh()->stock_quantity)->toBe('1.000');
 });
@@ -78,19 +77,15 @@ test('arquivos ausentes interrompem importacao sem gravar dados', function (): v
     expect(Client::count())->toBe(0)->and(Product::count())->toBe(0);
 });
 
-test('contato ausente recebe email provisorio unico e impede ativacao', function (): void {
+test('email ausente nao cria contato provisorio nem impede ativacao', function (): void {
     $service = app(CatalogCsvImportService::class);
     $service->import(2, $this->clientsPath, $this->productsPath, $this->reportPath, true);
     $client = Client::where('name', 'Cliente sem email')->firstOrFail();
-    expect($client->email)->toEndWith('@cadastro.invalid')
-        ->and($client->is_active)->toBeFalse()
-        ->and($client->hasProvisionalData())->toBeTrue();
-    expect(fn () => $client->update(['is_active' => true]))
-        ->toThrow(ValidationException::class);
+    expect($client->email)->toBeNull()
+        ->and($client->is_active)->toBeTrue()
+        ->and($client->hasProvisionalData())->toBeFalse();
     $service->import(2, $this->clientsPath, $this->productsPath, $this->reportPath, true);
     expect(Client::count())->toBe(2);
-    $client->update(['email' => 'real@example.test', 'is_active' => true]);
-    expect($client->is_active)->toBeTrue();
 });
 
 test('codigos do IBGE vem da lista local, sem chamada HTTP', function (): void {

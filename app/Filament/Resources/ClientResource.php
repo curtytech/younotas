@@ -56,7 +56,7 @@ class ClientResource extends CompanyOwnedResource
                     ->label('Nome do cliente'),
                 Forms\Components\TextInput::make('email')
                     ->email()
-                    ->required()
+                    ->nullable()
                     ->string()
                     ->maxLength(255)
                     ->unique(

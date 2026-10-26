@@ -747,3 +747,41 @@ test('botões de importação fiscal validam dados e enfileiram jobs', function 
         return $job->userId === $this->enterprise->id && $job->reference === 'nfse-ui-ref-001' && $job->connectionId === $connectionId;
     });
 });
+
+test('clientes podem ser criados e editados sem email e emails informados sao validados', function (): void {
+    $this->actingAs($this->enterprise);
+
+    foreach (['52998224725', '11144477735'] as $document) {
+        Livewire::test(CreateClient::class)
+            ->fillForm([
+                'name' => 'Cliente sem e-mail',
+                'email' => null,
+                'phone' => '11999998888',
+                'document_type' => 'cpf',
+                'document' => $document,
+                'address' => 'Rua do Painel',
+                'city' => 'São Paulo',
+                'ibge_code' => '3550308',
+                'state' => 'SP',
+                'country' => 'BR',
+                'is_active' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+    }
+
+    expect(Client::where('user_id', $this->enterprise->id)->whereNull('email')->count())->toBe(2);
+
+    $client = Client::where('user_id', $this->enterprise->id)->firstOrFail();
+    $client->update(['email' => 'cliente@example.test']);
+    Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+        ->fillForm(['email' => null])
+        ->call('save')
+        ->assertHasNoFormErrors();
+    expect($client->fresh()->email)->toBeNull();
+
+    Livewire::test(EditClient::class, ['record' => $client->getRouteKey()])
+        ->fillForm(['email' => 'email-invalido'])
+        ->call('save')
+        ->assertHasFormErrors(['email' => 'email']);
+});

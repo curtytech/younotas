@@ -39,6 +39,12 @@ php artisan filament:assets
 
 As migrações `2026_10_18_000024` e `2026_10_18_000025` importam clientes e produtos dos CSVs em `database/migrations`. Os códigos IBGE vêm apenas do snapshot local `database/data/municipios-ibge.json`, então o setup não faz chamadas externas. Para atualizar o arquivo, baixe a tabela de códigos de municípios do IBGE e regenere o JSON no mesmo formato (`nome`, `uf`, `codigo_ibge`).
 
+O e-mail no cadastro de clientes é opcional, inclusive na importação CSV. Quando informado, deve ser válido e único por empresa.
+
+## Testes
+
+Execute `php artisan test` localmente. Para validar o cadastro de clientes e a importação, execute `php artisan test tests/Feature/PanelPagesFunctionalTest.php tests/Feature/CatalogCsvImportTest.php`.
+
 ## Changelog
 
 ### [0.1.0] - 2026-08-02
