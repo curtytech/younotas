@@ -6,12 +6,14 @@ use App\Filament\Resources\ClientResource\Pages;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\CepService;
 use App\Services\FocusMunicipioService;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -163,6 +165,31 @@ class ClientResource extends CompanyOwnedResource
                 Forms\Components\TextInput::make('zip_code')
                     ->string()
                     ->maxLength(20)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(function (?string $state, Set $set): void {
+                        if (blank($state)) {
+                            return;
+                        }
+
+                        $address = app(CepService::class)->addressFor($state);
+
+                        if ($address === null) {
+                            Notification::make()
+                                ->danger()
+                                ->title('CEP não encontrado')
+                                ->body('Confira o CEP informado e tente novamente.')
+                                ->send();
+
+                            return;
+                        }
+
+                        foreach (['address', 'neighborhood', 'city', 'state', 'ibge_code'] as $field) {
+                            if ($address[$field] !== null) {
+                                $set($field, $address[$field]);
+                            }
+                        }
+                    })
+                    ->helperText('Preenche o endereço automaticamente ao informar um CEP válido.')
                     ->label('CEP'),
                 Forms\Components\TextInput::make('country')
                     ->default('BR')
