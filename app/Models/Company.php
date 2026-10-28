@@ -16,7 +16,11 @@ class Company extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'cnpj', 'default_environment', 'is_active', 'fiscal_settings'];
+    protected $fillable = [
+        'name', 'cnpj', 'phone', 'address', 'address_number', 'address_complement',
+        'neighborhood', 'city', 'state', 'zip_code', 'logo_path',
+        'default_environment', 'is_active', 'fiscal_settings',
+    ];
 
     protected $hidden = ['fiscal_settings'];
 

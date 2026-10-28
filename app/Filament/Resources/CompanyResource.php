@@ -34,6 +34,24 @@ class CompanyResource extends Resource
             Forms\Components\TextInput::make('name')->label('Razão social / nome')->required()->maxLength(255),
             Forms\Components\TextInput::make('cnpj')->label('CNPJ')->maxLength(18)
                 ->helperText('Os dados completos do emitente ficam na Configuração Fiscal.'),
+            Forms\Components\Section::make('Dados para orçamentos')
+                ->schema([
+                    Forms\Components\TextInput::make('phone')->label('Telefone')->maxLength(30),
+                    Forms\Components\TextInput::make('address')->label('Endereço')->maxLength(255),
+                    Forms\Components\TextInput::make('address_number')->label('Número')->maxLength(50),
+                    Forms\Components\TextInput::make('address_complement')->label('Complemento')->maxLength(255),
+                    Forms\Components\TextInput::make('neighborhood')->label('Bairro')->maxLength(255),
+                    Forms\Components\TextInput::make('city')->label('Cidade')->maxLength(255),
+                    Forms\Components\TextInput::make('state')->label('UF')->length(2),
+                    Forms\Components\TextInput::make('zip_code')->label('CEP')->maxLength(20),
+                    Forms\Components\FileUpload::make('logo_path')
+                        ->label('Logo')
+                        ->image()
+                        ->disk('public')
+                        ->directory('companies/logos')
+                        ->maxSize(2048)
+                        ->helperText('Envie uma logo para aparecer no PDF dos orçamentos.'),
+                ])->columns(2)->columnSpanFull(),
             Forms\Components\Toggle::make('is_active')->label('Empresa ativa')->default(true)
                 ->helperText('Desativar preserva o histórico fiscal e impede novas operações.'),
             Forms\Components\Section::make('Prontidão para emitir')
