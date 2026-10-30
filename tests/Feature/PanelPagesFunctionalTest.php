@@ -273,7 +273,7 @@ test('todos os formulários expõem os campos principais e os componentes repet�
             'settings.nfe.emitente.municipio', 'settings.nfe.emitente.uf',
             'settings.nfe.emitente.cep', 'settings.nfe.emitente.inscricao_estadual',
             'settings.nfe.emitente.regime_tributario', 'settings.nfe.natureza_operacao',
-            'settings.nfe.tipo_documento', 'settings.nfe.local_destino',
+            'settings.nfe.tipo_documento',
             'settings.nfe.finalidade_emissao', 'settings.nfe.consumidor_final',
             'settings.nfe.presenca_comprador', 'settings.nfe.modalidade_frete',
             'settings.nfe.forma_pagamento', 'settings.nfe.cfop_padrao',

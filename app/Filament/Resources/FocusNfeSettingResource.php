@@ -234,11 +234,6 @@ class FocusNfeSettingResource extends CompanyOwnedResource
                             ->numeric()
                             ->default(1)
                             ->label('Tipo do documento'),
-                        Forms\Components\TextInput::make('settings.nfe.local_destino')
-                            ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
-                            ->numeric()
-                            ->default(1)
-                            ->label('Local do destino'),
                         Forms\Components\TextInput::make('settings.nfe.finalidade_emissao')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->numeric()
