@@ -15,6 +15,10 @@ use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
+use App\Filament\Resources\QuoteResource;
+use App\Filament\Resources\QuoteResource\Pages\CreateQuote;
+use App\Filament\Resources\QuoteResource\Pages\EditQuote;
+use App\Filament\Resources\QuoteResource\Pages\ListQuotes;
 use App\Filament\Resources\SaleResource;
 use App\Filament\Resources\SaleResource\Pages\CreateSale;
 use App\Filament\Resources\SaleResource\Pages\EditSale;
@@ -53,6 +57,7 @@ use App\Models\FocusNfeSetting;
 use App\Models\FiscalDocument;
 use App\Services\FiscalDocumentWorkflow;
 use App\Models\Product;
+use App\Models\Quote;
 use App\Models\Sale;
 use App\Models\Service;
 use App\Models\ServiceOrder;
@@ -63,6 +68,7 @@ use App\Support\NfeStatus;
 use App\Support\NfseStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -107,6 +113,8 @@ test('rotas das páginas do painel respondem 200 para os perfis autorizados', fu
         Dashboard::getUrl(),
         ClientResource::getUrl('index'),
         ClientResource::getUrl('create'),
+        QuoteResource::getUrl('index'),
+        QuoteResource::getUrl('create'),
         ProductResource::getUrl('index'),
         ProductResource::getUrl('create'),
         ServiceResource::getUrl('index'),
@@ -176,6 +184,7 @@ test('componentes Livewire das páginas principais montam sem erro', function ()
     foreach ([
         Dashboard::class,
         ListClients::class,
+        ListQuotes::class,
         ListProducts::class,
         ListServices::class,
         ListTechnicians::class,
@@ -185,6 +194,7 @@ test('componentes Livewire das páginas principais montam sem erro', function ()
         ListFocusNfeSettings::class,
         ListFiscalDocuments::class,
         CreateClient::class,
+        CreateQuote::class,
         CreateProduct::class,
         CreateService::class,
         CreateTechnician::class,
@@ -240,6 +250,7 @@ test('todos os formulários expõem os campos principais e os componentes repet�
             'notes', 'is_active',
         ],
         CreateTechnician::class => ['company_id', 'name', 'phone', 'email', 'notes', 'is_active'],
+        CreateQuote::class => ['company_id', 'client_id', 'quote_date', 'valid_until', 'status', 'discount_amount', 'notes'],
         CreateServiceOrder::class => [
             'company_id', 'client_id', 'technician_id', 'status', 'scheduled_for',
             'problem_description', 'execution_description', 'signature_path', 'signed_by_name', 'notes',
@@ -462,6 +473,15 @@ test('seleção de produto e serviço preenche os campos derivados dos repetidor
 
 test('botões de criação persistem dados e aplicam as regras dos formulários', function (): void {
     $this->actingAs($this->enterprise);
+    Http::fake([
+        'https://viacep.com.br/ws/01311000/json/' => Http::response([
+            'logradouro' => 'Avenida Paulista',
+            'bairro' => 'Bela Vista',
+            'localidade' => 'São Paulo',
+            'uf' => 'SP',
+            'ibge' => '3550308',
+        ]),
+    ]);
 
     Livewire::test(CreateClient::class)
         ->fillForm([
@@ -678,8 +698,6 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
 
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('previsualizar_danfe')
-        ->assertActionHasUrl('previsualizar_danfe', route('sales.danfe-preview', $sale))
-        ->assertActionShouldOpenUrlInNewTab('previsualizar_danfe')
         ->assertActionVisible('emitir_nfe')
         ->callAction('emitir_nfe');
 
@@ -687,11 +705,13 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
     $nfeDocument = FiscalDocument::query()->where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
     app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::PROCESSING], 'consulta');
 
+    Http::fake(['*/v2/nfe/*' => Http::response(['status' => 'processando_autorizacao'])]);
+
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('consultar_nfe')
         ->callAction('consultar_nfe');
 
-    Bus::assertDispatched(ConsultSaleNfeJob::class, fn (ConsultSaleNfeJob $job): bool => $job->saleId === $sale->id && $job->documentId === $nfeDocument->id);
+    Http::assertSent(fn ($request): bool => $request->method() === 'GET' && str_contains($request->url(), '/v2/nfe/'.$nfeDocument->focus_reference));
 
     app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::AUTHORIZED], 'consulta');
 

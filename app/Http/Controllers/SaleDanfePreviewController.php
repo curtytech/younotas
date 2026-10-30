@@ -9,7 +9,7 @@ use RuntimeException;
 
 class SaleDanfePreviewController extends Controller
 {
-    public function __invoke(Sale $sale, PreviewSaleDanfeAction $action): Response
+    public function __invoke(Sale $sale, PreviewSaleDanfeAction $action): Response|\Illuminate\Http\RedirectResponse
     {
         abort_unless(
             auth()->check() && auth()->user()->canAccessCompany((int) $sale->company_id, 'view'),
@@ -19,9 +19,10 @@ class SaleDanfePreviewController extends Controller
         try {
             return $action->execute($sale);
         } catch (RuntimeException $exception) {
-            return response($exception->getMessage(), 422, [
-                'Content-Type' => 'text/plain; charset=UTF-8',
-            ]);
+            \Filament\Notifications\Notification::make()->warning()
+                ->title('Não foi possível abrir a DANFE')
+                ->body($exception->getMessage())->persistent()->send();
+            return redirect(\App\Filament\Resources\SaleResource::getUrl('edit', ['record' => $sale]));
         }
     }
 }

@@ -6,6 +6,9 @@ use App\Filament\Resources\CompanyResource\Pages;
 use App\Filament\Resources\CompanyResource\RelationManagers\MembersRelationManager;
 use App\Models\Company;
 use App\Services\FiscalReadiness;
+use App\Support\BrazilianStates;
+use App\Support\FiscalDocument;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -33,7 +36,55 @@ class CompanyResource extends Resource
         return $form->schema([
             Forms\Components\TextInput::make('name')->label('Razão social / nome')->required()->maxLength(255),
             Forms\Components\TextInput::make('cnpj')->label('CNPJ')->maxLength(18)
+                ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                    if (blank($value)) {
+                        return;
+                    }
+
+                    if (! FiscalDocument::cnpjIsValid((string) $value)) {
+                        $fail('Informe um CNPJ válido.');
+                    }
+                })
+                ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? FiscalDocument::digits((string) $state) : null)
                 ->helperText('Os dados completos do emitente ficam na Configuração Fiscal.'),
+            Forms\Components\Section::make('Dados para orçamentos')
+                ->schema([
+                    Forms\Components\TextInput::make('phone')->label('Telefone')->maxLength(30),
+                    Forms\Components\TextInput::make('address')->label('Endereço')->maxLength(255),
+                    Forms\Components\TextInput::make('address_number')->label('Número')->maxLength(50),
+                    Forms\Components\TextInput::make('address_complement')->label('Complemento')->maxLength(255),
+                    Forms\Components\TextInput::make('neighborhood')->label('Bairro')->maxLength(255),
+                    Forms\Components\TextInput::make('city')->label('Cidade')->maxLength(255),
+                    Forms\Components\TextInput::make('state')->label('UF')->maxLength(2)
+                        ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            if (! BrazilianStates::isValid((string) $value)) {
+                                $fail('Informe uma UF válida.');
+                            }
+                        })
+                        ->dehydrateStateUsing(fn (?string $state): ?string => BrazilianStates::normalize($state)),
+                    Forms\Components\TextInput::make('zip_code')->label('CEP')->maxLength(20)
+                        ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            if (! preg_match('/^\d{8}$/', FiscalDocument::digits((string) $value))) {
+                                $fail('O CEP deve conter 8 dígitos.');
+                            }
+                        })
+                        ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? FiscalDocument::digits((string) $state) : null),
+                    Forms\Components\FileUpload::make('logo_path')
+                        ->label('Logo')
+                        ->image()
+                        ->disk('public')
+                        ->directory('companies/logos')
+                        ->maxSize(2048)
+                        ->helperText('Envie uma logo para aparecer no PDF dos orçamentos.'),
+                ])->columns(2)->columnSpanFull(),
             Forms\Components\Toggle::make('is_active')->label('Empresa ativa')->default(true)
                 ->helperText('Desativar preserva o histórico fiscal e impede novas operações.'),
             Forms\Components\Section::make('Prontidão para emitir')

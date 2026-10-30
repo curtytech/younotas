@@ -9,6 +9,9 @@ use App\Models\FocusNfeSetting;
 use App\Models\Company;
 use App\Services\FiscalReadiness;
 use App\Services\FocusNfeConfigService;
+use App\Support\BrazilianStates;
+use App\Support\FiscalDocument;
+use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -98,6 +101,16 @@ class FocusNfeSettingResource extends CompanyOwnedResource
                             ->required()
                             ->string()
                             ->maxLength(18)
+                            ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                                if (blank($value)) {
+                                    return;
+                                }
+
+                                if (! FiscalDocument::cnpjIsValid((string) $value)) {
+                                    $fail('Informe um CNPJ válido.');
+                                }
+                            })
+                            ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? FiscalDocument::digits((string) $state) : null)
                             ->label('CNPJ do emitente'),
                         Forms\Components\TextInput::make('settings.prestador.inscricao_municipal')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfse') !== false)
@@ -107,7 +120,9 @@ class FocusNfeSettingResource extends CompanyOwnedResource
                         Forms\Components\TextInput::make('settings.prestador.codigo_municipio')
                             ->required()
                             ->string()
-                            ->maxLength(20)
+                            ->maxLength(7)
+                            ->rule('regex:/^\d{7}$/')
+                            ->validationMessages(['regex' => 'O código do município deve ter 7 dígitos.'])
                             ->label('Código do município'),
                         Forms\Components\TextInput::make('settings.nfse.natureza_operacao')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfse') !== false)
@@ -160,12 +175,32 @@ class FocusNfeSettingResource extends CompanyOwnedResource
                         Forms\Components\TextInput::make('settings.nfe.emitente.uf')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
-                            ->length(2)
+                            ->maxLength(2)
+                            ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                                if (blank($value)) {
+                                    return;
+                                }
+
+                                if (! BrazilianStates::isValid((string) $value)) {
+                                    $fail('Informe uma UF válida.');
+                                }
+                            })
+                            ->dehydrateStateUsing(fn (?string $state): ?string => BrazilianStates::normalize($state))
                             ->label('UF'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.cep')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)
                             ->string()
                             ->maxLength(10)
+                            ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                                if (blank($value)) {
+                                    return;
+                                }
+
+                                if (! preg_match('/^\d{8}$/', FiscalDocument::digits((string) $value))) {
+                                    $fail('O CEP deve conter 8 dígitos.');
+                                }
+                            })
+                            ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? FiscalDocument::digits((string) $state) : null)
                             ->label('CEP'),
                         Forms\Components\TextInput::make('settings.nfe.emitente.inscricao_estadual')
                             ->required(fn (Get $get): bool => $get('settings.documents.nfe') !== false)

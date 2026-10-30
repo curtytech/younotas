@@ -6,6 +6,7 @@ use App\Exceptions\FocusNfseRequestException;
 use App\Models\Client;
 use App\Models\FiscalDocument as FiscalDocumentModel;
 use App\Models\ServiceOrder;
+use App\Support\BrazilianStates;
 use App\Support\FiscalDocument;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Str;
@@ -279,10 +280,7 @@ class FocusNfseService
 
     protected function brazilianStates(): array
     {
-        return [
-            'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
-            'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
-        ];
+        return BrazilianStates::all();
     }
 
     protected function nullableDecimal(mixed $value): ?float

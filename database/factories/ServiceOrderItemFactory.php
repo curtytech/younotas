@@ -13,6 +13,6 @@ class ServiceOrderItemFactory extends Factory
 
     public function definition(): array
     {
-        return ['service_order_id' => ServiceOrder::factory(), 'service_name' => 'Serviço de teste', 'unit' => 'UN', 'quantity' => 1, 'unit_price' => 100, 'total_amount' => 100];
+        return ['service_order_id' => ServiceOrder::factory(), 'service_id' => fn (array $attributes) => \App\Models\Service::factory()->create(['company_id' => ServiceOrder::find($attributes['service_order_id'])->company_id])->id, 'service_name' => 'Serviço de teste', 'unit' => 'UN', 'quantity' => 1, 'unit_price' => 100, 'total_amount' => 100];
     }
 }

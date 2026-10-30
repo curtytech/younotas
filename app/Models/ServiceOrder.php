@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use InvalidArgumentException;
 
 class ServiceOrder extends Model
 {
@@ -63,6 +62,14 @@ class ServiceOrder extends Model
         });
 
         static::saving(function (ServiceOrder $order): void {
+            if (filled($order->signature_path)) {
+                $order->signed_at = $order->signed_at ?? now();
+            } else {
+                $order->signed_at = null;
+                $order->signed_by_name = null;
+            }
+        });
+        static::saving(function (ServiceOrder $order): void {
             if (! $order->exists || ! $order->isDirty('status')) {
                 return;
             }
@@ -77,7 +84,9 @@ class ServiceOrder extends Model
             ];
 
             if (! in_array($order->status, $allowed[$order->getOriginal('status')] ?? [], true)) {
-                throw new InvalidArgumentException('Transição de status de O.S. não permitida.');
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => 'Transição de status de O.S. não permitida.',
+                ]);
             }
         });
     }

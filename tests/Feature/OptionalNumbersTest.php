@@ -32,7 +32,7 @@ test('produto aceita números opcionais apagados na criação e edição', funct
 
 test('movimentação de estoque aceita saldos e custo em branco', function () {
     $user = User::factory()->create(['role' => 'enterprise']);
-    $product = Product::factory()->create(['user_id' => $user->id]);
+    $product = Product::factory()->create(['user_id' => $user->id, 'stock_quantity' => 10]);
     $this->actingAs($user);
 
     Livewire::test(CreateStockMovement::class)
@@ -50,8 +50,9 @@ test('movimentação de estoque aceita saldos e custo em branco', function () {
         ->assertHasNoFormErrors();
 
     $movement = StockMovement::query()->where('reference', 'REGRESSAO-CAMPOS-VAZIOS')->sole();
-    expect($movement->previous_stock)->toBe('0.000')
-        ->and($movement->current_stock)->toBe('0.000')
+    expect($product->fresh()->stock_quantity)->toBe('12.000')
+        ->and($movement->previous_stock)->toBe('10.000')
+        ->and($movement->current_stock)->toBe('12.000')
         ->and($movement->unit_cost)->toBe('0.00');
 });
 

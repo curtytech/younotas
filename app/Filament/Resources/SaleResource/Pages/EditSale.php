@@ -2,18 +2,18 @@
 
 namespace App\Filament\Resources\SaleResource\Pages;
 
+use App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
 use App\Filament\Resources\SaleResource;
 use App\Jobs\CancelSaleNfeJob;
-use App\Jobs\ConsultSaleNfeJob;
-use App\Jobs\EmitSaleNfeJob;
 use App\Support\NfeStatus;
 use Filament\Actions;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\EditRecord;
+use Livewire\Attributes\On;
 
 class EditSale extends EditRecord
 {
-    use \App\Filament\Resources\Concerns\InteractsWithCompanyOwnership;
+    use InteractsWithCompanyOwnership;
 
     protected static string $resource = SaleResource::class;
 
@@ -23,7 +23,7 @@ class EditSale extends EditRecord
         return static::getResource()::normalizeOwnership($data, $this->record);
     }
 
-    #[\Livewire\Attributes\On('sale-items-updated')]
+    #[On('sale-items-updated')]
     public function refreshSaleTotals(): void
     {
         $this->record->refresh();
@@ -41,32 +41,50 @@ class EditSale extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('previsualizar_danfe')
-                ->label('Pré-visualizar DANFe')
-                ->icon('heroicon-o-document')
-                ->color('gray')
-                ->url(fn (): string => route('sales.danfe-preview', $this->record))
+            Actions\Action::make('abrir_danfe')
+                ->label('Abrir DANFE')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('success')
+                ->visible(fn (): bool => $this->record->focus_nfe_status === NfeStatus::AUTHORIZED && filled($this->record->focus_nfe_url))
+                ->url(fn (): ?string => $this->record->focus_nfe_url)
                 ->openUrlInNewTab(),
             Actions\Action::make('emitir_nfe')
-                ->label(fn (): string => NfeStatus::requiresNewReference($this->record->focus_nfe_status) ? 'Emitir nova NF-e' : 'Emitir NF-e')
+                ->label(fn (): string => match (true) {
+                    NfeStatus::requiresNewReference($this->record->focus_nfe_status) => 'Emitir nova NF-e',
+                    NfeStatus::hasProblem($this->record->focus_nfe_status) => 'Reenviar NF-e',
+                    default => 'Emitir NF-e',
+                })
                 ->icon('heroicon-o-paper-airplane')
-                ->visible(fn (): bool => NfeStatus::canEmit($this->record->focus_nfe_status))
+                ->visible(fn (): bool => SaleResource::canEmit($this->record))
                 ->requiresConfirmation()
-                ->action(fn (): mixed => EmitSaleNfeJob::dispatch($this->record->id))
-                ->successNotificationTitle('Emissão da NF-e enfileirada.'),
+                ->modalDescription('A nota é enviada à SEFAZ e costuma ser autorizada em alguns segundos.')
+                ->action(function (): void {
+                    SaleResource::emitNow($this->record);
+                    $this->record->refresh();
+                }),
             Actions\Action::make('consultar_nfe')
-                ->label('Consultar NF-e')->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => filled($this->record->focus_nfe_ref) && $this->record->focus_nfe_status === NfeStatus::PROCESSING)
-                ->action(fn (): mixed => ConsultSaleNfeJob::dispatch($this->record->id))
-                ->successNotificationTitle('Consulta da NF-e enfileirada.'),
-            Actions\Action::make('cancelar_nfe')
-                ->label('Cancelar NF-e')->icon('heroicon-o-x-circle')->color('danger')
-                ->visible(fn (): bool => NfeStatus::canCancel($this->record->focus_nfe_status))
-                ->requiresConfirmation()
-                ->form([Textarea::make('justification')->label('Justificativa')->required()->minLength(15)->maxLength(255)])
-                ->action(fn (array $data): mixed => CancelSaleNfeJob::dispatch($this->record->id, $data['justification']))
-                ->successNotificationTitle('Cancelamento da NF-e enfileirado.'),
-            Actions\DeleteAction::make(),
+                ->label('Atualizar situação')->icon('heroicon-o-arrow-path')->color('gray')
+                ->visible(fn (): bool => SaleResource::canConsult($this->record))
+                ->action(function (): void {
+                    SaleResource::consultNow($this->record);
+                    $this->record->refresh();
+                }),
+            Actions\ActionGroup::make([
+                Actions\Action::make('previsualizar_danfe')
+                    ->label('Pré-visualizar DANFE')
+                    ->icon('heroicon-o-eye')
+                    ->visible(fn (): bool => $this->record->focus_nfe_status !== NfeStatus::AUTHORIZED)
+                    ->action(fn () => SaleResource::prepareDanfePreview($this->record)),
+                Actions\Action::make('cancelar_nfe')
+                    ->label('Cancelar NF-e')->icon('heroicon-o-x-circle')->color('danger')
+                    ->visible(fn (): bool => NfeStatus::canCancel($this->record->focus_nfe_status))
+                    ->requiresConfirmation()
+                    ->modalDescription('O cancelamento é enviado à SEFAZ e não pode ser desfeito.')
+                    ->form([Textarea::make('justification')->label('Justificativa')->helperText('Entre 15 e 255 caracteres.')->required()->minLength(15)->maxLength(255)])
+                    ->action(fn (array $data): mixed => CancelSaleNfeJob::dispatch($this->record->id, $data['justification']))
+                    ->successNotificationTitle('Cancelamento enviado. A situação é atualizada quando a SEFAZ responder.'),
+                Actions\DeleteAction::make(),
+            ])->tooltip('Mais ações'),
         ];
     }
 }

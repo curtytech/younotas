@@ -30,6 +30,21 @@ class ServiceOrderItem extends Model
             if ($item->service_id && (int) $item->service?->company_id !== (int) $item->order?->company_id) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'O serviço deve pertencer à mesma empresa da O.S.']);
             }
+
+            $fields = ['service_name' => 'name', 'service_code' => 'code', 'description' => 'description', 'unit' => 'unit'];
+            foreach (['municipal_service_code', 'lc116_code', 'cnae_code', 'nbs_code', 'iss_aliquot', 'pis_aliquot', 'cofins_aliquot', 'inss_aliquot', 'ir_aliquot', 'csll_aliquot'] as $field) {
+                $fields[$field] = $field;
+            }
+            foreach ($fields as $field => $source) {
+                if (! $item->service_id && ! $item->exists) { continue; }
+                $item->$field = ($item->service_id && (! $item->exists || $item->isDirty('service_id'))) ? $item->service->$source : $item->getRawOriginal($field);
+            }
+
+            $item->total_amount = max(round(
+                (float) $item->quantity * (float) $item->unit_price
+                - (float) $item->discount_amount + (float) $item->tax_amount,
+                2,
+            ), 0);
         });
         static::saved(fn (ServiceOrderItem $item) => $item->order?->recalculateTotals());
         static::deleted(fn (ServiceOrderItem $item) => $item->order?->recalculateTotals());

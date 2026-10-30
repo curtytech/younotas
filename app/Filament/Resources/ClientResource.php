@@ -5,19 +5,21 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ClientResource\Pages;
 use App\Models\Client;
 use App\Models\Company;
-use App\Models\User;
+use App\Services\CepService;
 use App\Services\FocusMunicipioService;
+use App\Support\BrazilianStates;
+use App\Support\FiscalDocument;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
 class ClientResource extends CompanyOwnedResource
 {
@@ -105,10 +107,10 @@ class ClientResource extends CompanyOwnedResource
                         }
 
                         match ($documentType) {
-                            'cpf' => static::isValidCpf($document) ?: $fail('Informe um CPF valido.'),
-                            'cnpj' => static::isValidCnpj($document) ?: $fail('Informe um CNPJ valido.'),
-                            'nif' => static::isValidNif($document) ?: $fail('Informe um NIF valido.'),
-                            default => $fail('Selecione um tipo de documento valido.'),
+                            'cpf' => FiscalDocument::cpfIsValid($document) ?: $fail('Informe um CPF válido.'),
+                            'cnpj' => FiscalDocument::cnpjIsValid($document) ?: $fail('Informe um CNPJ válido.'),
+                            'nif' => static::isValidNif($document) ?: $fail('Informe um NIF válido.'),
+                            default => $fail('Selecione um tipo de documento válido.'),
                         };
                     })
                     ->unique(
@@ -147,22 +149,75 @@ class ClientResource extends CompanyOwnedResource
                     ->afterStateUpdated(fn (Get $get, Set $set) => static::fillIbgeCode($get, $set))
                     ->label('Cidade'),
                 Forms\Components\TextInput::make('ibge_code')
-                    ->required()
-                    ->numeric()
-                    ->length(7)
+                    ->required(fn (Get $get): bool => static::isBrazilian($get('country')))
+                    ->validationMessages(['required' => 'Informe o código IBGE do município.'])
+                    ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                        if (blank($value)) {
+                            return;
+                        }
+
+                        if (! preg_match('/^\d{7}$/', FiscalDocument::digits((string) $value))) {
+                            $fail('O código IBGE deve ter 7 dígitos.');
+                        }
+                    })
                     ->helperText('Preenchido automaticamente a partir da cidade e UF. Pode ser alterado manualmente.')
                     ->label('Código IBGE do município'),
                 Forms\Components\TextInput::make('state')
+                    ->required(fn (Get $get): bool => static::isBrazilian($get('country')))
+                    ->validationMessages(['required' => 'Informe a UF.'])
                     ->string()
-                    ->length(2)
                     ->maxLength(2)
                     ->live(onBlur: true)
-                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? Str::upper(trim($state)) : null)
+                    ->dehydrateStateUsing(fn (?string $state): ?string => BrazilianStates::normalize($state))
+                    ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                        if (blank($value)) {
+                            return;
+                        }
+
+                        if (! BrazilianStates::isValid((string) $value)) {
+                            $fail('Informe uma UF válida.');
+                        }
+                    })
                     ->afterStateUpdated(fn (Get $get, Set $set) => static::fillIbgeCode($get, $set))
                     ->label('UF'),
                 Forms\Components\TextInput::make('zip_code')
                     ->string()
                     ->maxLength(20)
+                    ->live(onBlur: true)
+                    ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                        if (blank($value)) {
+                            return;
+                        }
+
+                        if (! preg_match('/^\d{8}$/', FiscalDocument::digits((string) $value))) {
+                            $fail('O CEP deve conter 8 dígitos.');
+                        }
+                    })
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? FiscalDocument::digits((string) $state) : null)
+                    ->afterStateUpdated(function (?string $state, Set $set): void {
+                        if (blank($state)) {
+                            return;
+                        }
+
+                        $address = app(CepService::class)->addressFor($state);
+
+                        if ($address === null) {
+                            Notification::make()
+                                ->danger()
+                                ->title('CEP não encontrado')
+                                ->body('Confira o CEP informado e tente novamente.')
+                                ->send();
+
+                            return;
+                        }
+
+                        foreach (['address', 'neighborhood', 'city', 'state', 'ibge_code'] as $field) {
+                            if ($address[$field] !== null) {
+                                $set($field, $address[$field]);
+                            }
+                        }
+                    })
+                    ->helperText('Preenche o endereço automaticamente ao informar um CEP válido.')
                     ->label('CEP'),
                 Forms\Components\TextInput::make('country')
                     ->default('BR')
@@ -170,6 +225,8 @@ class ClientResource extends CompanyOwnedResource
                     ->string()
                     ->length(2)
                     ->maxLength(2)
+                    ->live(onBlur: true)
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null)
                     ->label('País'),
                 Forms\Components\Toggle::make('is_active')
                     ->default(true)
@@ -288,53 +345,17 @@ class ClientResource extends CompanyOwnedResource
 
     protected static function isValidCpf(string $cpf): bool
     {
-        if (! preg_match('/^\d{11}$/', $cpf) || preg_match('/^(\d)\1{10}$/', $cpf)) {
-            return false;
-        }
-
-        for ($digitPosition = 9; $digitPosition < 11; $digitPosition++) {
-            $sum = 0;
-
-            for ($i = 0; $i < $digitPosition; $i++) {
-                $sum += ((int) $cpf[$i]) * (($digitPosition + 1) - $i);
-            }
-
-            $digit = ((10 * $sum) % 11) % 10;
-
-            if ((int) $cpf[$digitPosition] !== $digit) {
-                return false;
-            }
-        }
-
-        return true;
+        return FiscalDocument::cpfIsValid($cpf);
     }
 
     protected static function isValidCnpj(string $cnpj): bool
     {
-        if (! preg_match('/^\d{14}$/', $cnpj) || preg_match('/^(\d)\1{13}$/', $cnpj)) {
-            return false;
-        }
-
-        $firstWeights = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-        $secondWeights = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-
-        $firstDigit = static::calculateCnpjDigit($cnpj, $firstWeights);
-        $secondDigit = static::calculateCnpjDigit($cnpj, $secondWeights);
-
-        return (int) $cnpj[12] === $firstDigit && (int) $cnpj[13] === $secondDigit;
+        return FiscalDocument::cnpjIsValid($cnpj);
     }
 
-    protected static function calculateCnpjDigit(string $cnpj, array $weights): int
+    protected static function isBrazilian(?string $country): bool
     {
-        $sum = 0;
-
-        foreach ($weights as $index => $weight) {
-            $sum += ((int) $cnpj[$index]) * $weight;
-        }
-
-        $remainder = $sum % 11;
-
-        return $remainder < 2 ? 0 : 11 - $remainder;
+        return strtoupper(trim((string) $country)) === 'BR';
     }
 
     protected static function isValidNif(string $nif): bool

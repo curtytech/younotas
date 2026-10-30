@@ -55,8 +55,13 @@ class ServiceOrderResource extends CompanyOwnedResource
             Forms\Components\DateTimePicker::make('scheduled_for')->label('Agendamento'),
             Forms\Components\Textarea::make('problem_description')->label('Problema/solicitação'),
             Forms\Components\Textarea::make('execution_description')->label('Descrição da execução'),
-            Forms\Components\Repeater::make('items')->relationship()->minItems(1)->defaultItems(1)->live()->schema([
-                Forms\Components\Select::make('service_id')->options(fn (Get $get): array => Service::query()->where('company_id', $get('../../company_id'))->where('is_active', true)->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->required()->live()->afterStateUpdated(function ($state, callable $set): void {
+            Forms\Components\Repeater::make('items')->relationship()->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                if (empty($data['service_id'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['data.items' => 'Selecione um serviço para cada item novo.']);
+                }
+                return $data;
+            })->minItems(1)->defaultItems(1)->live()->schema([
+                Forms\Components\Select::make('service_id')->options(fn (Get $get): array => Service::query()->where('company_id', $get('../../company_id'))->where('is_active', true)->orderBy('name')->pluck('name', 'id')->all())->searchable()->preload()->required(fn (Get $get): bool => blank($get('service_name')))->helperText('Obrigatório em itens novos. Itens antigos mantêm os dados do serviço mesmo que ele tenha sido removido.')->live()->afterStateUpdated(function ($state, callable $set): void {
                     if ($service = Service::find($state)) {
                         $set('service_name', $service->name);
                         $set('service_code', $service->code);
@@ -69,15 +74,33 @@ class ServiceOrderResource extends CompanyOwnedResource
                     }
                 })->label('Serviço'),
                 Forms\Components\Hidden::make('service_name'), Forms\Components\Hidden::make('service_code'), Forms\Components\Hidden::make('description'), Forms\Components\Hidden::make('municipal_service_code'), Forms\Components\Hidden::make('lc116_code'), Forms\Components\Hidden::make('cnae_code'), Forms\Components\Hidden::make('nbs_code'), Forms\Components\Hidden::make('unit'),
-                Forms\Components\TextInput::make('quantity')->numeric()->required()->default(1)->minValue(.001)->label('Quantidade'),
-                MoneyInput::make('unit_price')->numeric()->required()->minValue(0)->label('Valor unitário'),
-                MoneyInput::make('total_amount')->numeric()->required()->default(0)->label('Total'),
+                Forms\Components\TextInput::make('quantity')->numeric()->required()->default(1)->minValue(.001)->label('Quantidade')
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
+                MoneyInput::make('unit_price')->numeric()->required()->minValue(0)->label('Valor unitário')
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
+                MoneyInput::make('total_amount')->numeric()->required()->default(0)->readOnly()->label('Total'),
                 ...collect(['iss', 'pis', 'cofins', 'inss', 'ir', 'csll'])->map(fn (string $tax) => Forms\Components\Hidden::make("{$tax}_aliquot"))->all(),
             ])->columnSpanFull()->label('Serviços executados'),
-            Forms\Components\FileUpload::make('signature_path')->image()->disk('local')->directory('service-orders/signatures')->label('Assinatura do cliente'),
-            Forms\Components\TextInput::make('signed_by_name')->label('Nome do cliente que assinou'),
+            Forms\Components\FileUpload::make('signature_path')->image()->disk('local')->directory('service-orders/signatures')->label('Assinatura do cliente')
+                ->live()
+                ->required(fn (Get $get): bool => filled($get('signed_by_name'))),
+            Forms\Components\TextInput::make('signed_by_name')->label('Nome do cliente que assinou')
+                ->required(fn (Get $get): bool => filled($get('signature_path')))
+                ->helperText('Obrigatório quando a assinatura é enviada.'),
             Forms\Components\Textarea::make('notes')->label('Observações'),
         ]);
+    }
+
+    protected static function updateItemTotal(callable $get, callable $set): void
+    {
+        $quantity = (float) ($get('quantity') ?: 0);
+        $unitPrice = (float) ($get('unit_price') ?: 0);
+        $discount = (float) ($get('discount_amount') ?: 0);
+        $tax = (float) ($get('tax_amount') ?: 0);
+
+        $set('total_amount', max(round(($quantity * $unitPrice) - $discount + $tax, 2), 0));
     }
 
     public static function table(Table $table): Table
