@@ -2,17 +2,25 @@
 
 Objetivo: conferir a configuração da Mil de Magé e testar cadastro, venda, emissão e DANFE, incluindo erros compreensíveis.
 
-Passos concluídos:
-- Identificar aplicação e obter .env e configurações sem expor segredos.
-- Conferir conexão dos dois ambientes com GET sem efeitos fiscais.
-- Executar suíte local: 237 testes passaram.
-- Executar prévia real, emissão autorizada e download da DANFE em homologação.
-- Conferir no navegador rejeição simultânea de CPF, UF e IBGE inválidos.
+Concluído:
+- Identificar instalação remota e obter configurações sem expor segredos.
+- Consultas sem efeitos fiscais nos dois ambientes; emissão real autorizada e DANFE em homologação.
+- Receber e revisar a entrega do GPT-6.1 Terra médio: inicialmente só plano, depois infraestrutura parcial e login.
+- Corrigir isolamento de caches, porta fixa sem identidade, possibilidade de executar public/index.php fora do bootstrap de teste e chamadas externas do navegador.
+- Acrescentar emitente/fake Focus sintéticos e chave distinta por referência.
+- Executar em desktop e celular: login, cliente inválido e válido, produto, venda, NCM ausente/correção, prévia PDF em nova aba, emissão simulada com clique duplo e abertura da DANFE autorizada.
+- Corrigir nome acessível do menu de venda e sanitizar falhas de banco no diagnóstico fiscal.
+- Conferir capturas de erros e autorização nos dois layouts e recusa de porta ocupada.
 
-Tentativas: variável de ambiente do host não chegou ao contêiner pelo wrapper PHP; usar podman exec -e. O bloqueio global de chamadas externas dos testes exigiu allowStrayRequests restrito ao host de homologação. Campos ocultos na serialização da empresa exigiram inspecionar a configuração efetivamente resolvida.
+Tentativas e achados:
+- Http::fake deve ser instalado no processo do servidor; o fake do Pest não o protege.
+- O fake devolvia chave fixa, provocando colisão na segunda venda. Foi corrigido; a falha revelou SQL exposto na interface, agora sanitizado.
+- A notificação persistente da prévia pode cobrir a ação de emissão; o teste a fecha pelo controle da interface.
+- No mobile, o menu pode estar aberto; o teste o fecha pela sobreposição, sem forçar cliques em controles cobertos.
+- O PHP do host não repassa variáveis pelo wrapper lerd; o runner usa PHP nativo.
 
-Dúvidas abertas: nenhuma necessária para continuar os testes locais.
+Dúvidas abertas: nenhuma necessária para continuar.
 
-Próximo passo: concluir E2E de sucesso no navegador para cliente, produto, venda, prévia e emissão; ampliar cenários de erro no navegador e inspecionar desktop/mobile. A produção segue somente com consultas, sem emissão real.
+Próximo passo: ampliar E2E com CFOP interestadual, estoque insuficiente, descontos, CNPJ/CEP e respostas Focus 401/422/429/5xx/timeout, incluindo recuperação. Esses cenários têm testes de integração, mas ainda não cobertura completa no navegador.
 
-Resultados: docs/testing/auditoria-fiscal-2026-10-30.md.
+Documentação: tests/Browser/README.md e docs/testing/auditoria-fiscal-2026-10-30.md.

@@ -15,12 +15,15 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Services\FiscalDocumentWorkflow;
 use App\Services\FiscalEmissionPreparation;
+use App\Services\FiscalIssueDiagnosis;
+use App\Services\FocusDanfePreviewService;
 use App\Support\NfeStatus;
 use Closure;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
@@ -555,15 +558,16 @@ class SaleResource extends CompanyOwnedResource
     {
         abort_unless(auth()->user()->canAccessCompany((int) $record->company_id, 'view'), 403);
         try {
-            app(\App\Services\FocusDanfePreviewService::class)->buildPayload($record);
+            app(FocusDanfePreviewService::class)->buildPayload($record);
         } catch (RuntimeException $exception) {
             Notification::make()->warning()->title('Revise os dados antes de abrir a DANFE')
-                ->body($exception->getMessage())->persistent()->send();
+                ->body(FiscalIssueDiagnosis::failureMessage($exception))->persistent()->send();
+
             return;
         }
         Notification::make()->success()->title('Dados conferidos')
             ->body('Abra a prévia da DANFE para conferir a nota.')
-            ->actions([\Filament\Notifications\Actions\Action::make('abrir')->label('Abrir DANFE')
+            ->actions([Action::make('abrir')->label('Abrir DANFE')
                 ->url(route('sales.danfe-preview', $record), shouldOpenInNewTab: true)])
             ->persistent()->send();
     }
@@ -577,7 +581,7 @@ class SaleResource extends CompanyOwnedResource
 
             return;
         } catch (RuntimeException $exception) {
-            Notification::make()->danger()->title('Não foi possível enviar a NF-e.')->body($exception->getMessage())->send();
+            Notification::make()->danger()->title('Não foi possível enviar a NF-e.')->body(FiscalIssueDiagnosis::failureMessage($exception))->send();
 
             return;
         }

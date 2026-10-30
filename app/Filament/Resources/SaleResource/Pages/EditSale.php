@@ -84,7 +84,7 @@ class EditSale extends EditRecord
                     ->action(fn (array $data): mixed => CancelSaleNfeJob::dispatch($this->record->id, $data['justification']))
                     ->successNotificationTitle('Cancelamento enviado. A situação é atualizada quando a SEFAZ responder.'),
                 Actions\DeleteAction::make(),
-            ])->tooltip('Mais ações'),
+            ])->tooltip('Mais ações')->extraAttributes(['aria-label' => 'Mais ações']),
         ];
     }
 }

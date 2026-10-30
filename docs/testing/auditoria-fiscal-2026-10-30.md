@@ -20,7 +20,7 @@
 
 Não houve emissão, cancelamento ou alteração de documentos em produção. HTTP 404 em consulta não prova habilitação para emissão, certificado válido ou autorização pela SEFAZ.
 
-A validação de navegador ainda não cobre o fluxo completo de cadastro de cliente, produto e venda até emissão. A emissão real e o download foram verificados por teste de integração, não pelo navegador. A inspeção mobile também está incompleta.
+A emissão real foi verificada por integração. Na revisão posterior, o runner tests/Browser/run.sh passou no desktop e celular com cadastros completos, prévia, emissão simulada e abertura da DANFE. A matriz de erros do navegador ainda não está completa; consulte tests/Browser/README.md.
 
 As falhas 401/422/429/5xx, timeout, JSON inválido, idempotência e isolamento possuem cobertura na suíte com respostas simuladas; não foram provocadas deliberadamente no provedor real.
 
@@ -35,3 +35,7 @@ Os testes LiveFocusAuditTest são ignorados por padrão. Para executar a prévia
 FOCUS_AUDIT_EMIT=1 autoriza o teste a emitir uma nova NF-e de homologação com referência única. Cada execução com essa opção emite outra nota de teste. Sem essa opção, o teste não envia nova emissão. O resultado fica em focus-audit-result.json ao lado da configuração e permite consultar e baixar a DANFE da referência existente.
 
 No ambiente lerd, variáveis do host não foram repassadas pelo wrapper php. A execução real usou podman exec -e com as variáveis explícitas no contêiner PHP e arquivo privado em storage/app/private, ignorado pelo Git.
+
+## Revisão dos testes de navegador
+
+O Terra entregou a base e um login móvel. A revisão do agente principal corrigiu o isolamento, o conflito de porta e o fake com chave duplicada, e implementou o fluxo de cadastro até DANFE nos dois layouts. Foram corrigidos também o nome acessível do menu da venda e a exposição de SQL nos erros fiscais. Os testes da aplicação passaram com 239 testes e dois testes reais opt-in ignorados por padrão.
