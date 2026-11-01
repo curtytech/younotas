@@ -57,6 +57,47 @@ class NfeStatus
         return NfseStatus::isAmbiguousFailure($error);
     }
 
+    public static function label(?string $status): string
+    {
+        return match ($status) {
+            self::SENDING => 'Enviando',
+            self::PROCESSING => 'Processando',
+            self::AUTHORIZED => 'Autorizada',
+            self::CANCELED => 'Cancelada',
+            self::DENIED => 'Denegada',
+            self::AUTHORIZATION_ERROR => 'Rejeitada',
+            self::CANCELLATION_ERROR => 'Erro no cancelamento',
+            self::TRANSPORT_ERROR => 'Erro de envio',
+            default => 'Não emitida',
+        };
+    }
+
+    public static function color(?string $status): string
+    {
+        return match ($status) {
+            self::AUTHORIZED => 'success',
+            self::SENDING, self::PROCESSING => 'warning',
+            self::AUTHORIZATION_ERROR, self::TRANSPORT_ERROR, self::DENIED, self::CANCELLATION_ERROR => 'danger',
+            default => 'gray',
+        };
+    }
+
+    public static function icon(?string $status): string
+    {
+        return match ($status) {
+            self::AUTHORIZED => 'heroicon-m-check-badge',
+            self::SENDING, self::PROCESSING => 'heroicon-m-clock',
+            self::CANCELED => 'heroicon-m-no-symbol',
+            self::AUTHORIZATION_ERROR, self::TRANSPORT_ERROR, self::DENIED, self::CANCELLATION_ERROR => 'heroicon-m-exclamation-triangle',
+            default => 'heroicon-m-minus-circle',
+        };
+    }
+
+    public static function hasProblem(?string $status): bool
+    {
+        return in_array($status, [self::AUTHORIZATION_ERROR, self::TRANSPORT_ERROR, self::DENIED, self::CANCELLATION_ERROR], true);
+    }
+
     public static function canCancel(?string $status): bool
     {
         return $status === self::AUTHORIZED;

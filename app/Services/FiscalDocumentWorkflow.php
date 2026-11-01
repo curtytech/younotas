@@ -103,7 +103,7 @@ class FiscalDocumentWorkflow
             $ambiguous = self::isAmbiguous($exception);
             $attributes = ['last_error' => [
                 'operation' => $operation,
-                'message' => $ambiguous ? 'Não foi possível confirmar o resultado na Focus. A referência será consultada novamente.' : ($httpStatus ? 'A Focus recusou a operação (HTTP '.$httpStatus.').' : $exception->getMessage()),
+                'message' => $ambiguous ? 'Não foi possível confirmar o resultado na Focus. A referência será consultada novamente.' : ($httpStatus ? 'A Focus recusou a operação (HTTP '.$httpStatus.').' : FiscalIssueDiagnosis::failureMessage($exception)),
                 'exception' => $exception::class, 'http_status' => $httpStatus ?? ($ambiguous ? null : 0), 'at' => now()->toIso8601String(),
             ]];
             if ($operation === 'emissao' && ! in_array($document->status, [NfeStatus::AUTHORIZED, NfeStatus::CANCELED, NfeStatus::DENIED], true)) {

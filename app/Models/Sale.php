@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
-use App\Services\FiscalDocumentRecorder;
 use App\Models\Concerns\BelongsToCompany;
 use App\Models\Concerns\NormalizesOptionalNumbers;
+use App\Services\FiscalDocumentRecorder;
+use App\Services\FiscalIssueDiagnosis;
+use App\Support\NfeStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Validation\ValidationException;
 
 class Sale extends Model
 {
@@ -28,12 +31,12 @@ class Sale extends Model
             }
 
             if ($sale->client_id && (int) $sale->client()->value('company_id') !== (int) $sale->company_id) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['client_id' => 'O cliente deve pertencer à mesma empresa da venda.']);
+                throw ValidationException::withMessages(['client_id' => 'O cliente deve pertencer à mesma empresa da venda.']);
             }
         });
         static::deleting(function (Sale $sale): void {
             if ($sale->fiscalDocuments()->exists()) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['sale' => 'Preserve a venda vinculada ao histórico fiscal.']);
+                throw ValidationException::withMessages(['sale' => 'Preserve a venda vinculada ao histórico fiscal.']);
             }
             $sale->saleItems()->get()->each->delete();
         });
@@ -102,6 +105,29 @@ class Sale extends Model
             - (float) $item->discount_amount + (float) $item->tax_amount,
             2,
         ), 0)), 2);
+    }
+
+    /** Sent or authorized notes keep the data they were issued with. */
+    public function hasLockedNfe(): bool
+    {
+        return in_array($this->focus_nfe_status, [NfeStatus::SENDING, NfeStatus::PROCESSING, NfeStatus::AUTHORIZED], true);
+    }
+
+    /** @return array{category: string, summary: string, details: list<string>, action: string} */
+    public function nfeDiagnosis(): array
+    {
+        $document = (new FiscalDocument)->forceFill([
+            'status' => $this->focus_nfe_status,
+            'fiscal_connection_id' => $this->focus_nfe_connection_id,
+            'environment' => $this->focus_nfe_environment,
+            'last_error' => $this->focus_nfe_error,
+            'raw_response' => $this->focus_nfe_response_secure,
+            'last_sent_at' => $this->focus_nfe_last_sent_at,
+            'last_checked_at' => $this->focus_nfe_last_checked_at,
+            'updated_at' => $this->updated_at,
+        ]);
+
+        return app(FiscalIssueDiagnosis::class)->explain($document);
     }
 
     public function recalculateTotals(): void

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\SaleDanfePreviewController;
+use App\Http\Controllers\SaleLocalDanfeController;
 use App\Http\Controllers\FiscalDocumentFileController;
 use App\Http\Controllers\FiscalExportController;
 use App\Http\Controllers\QuotePdfController;
@@ -15,6 +16,8 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/fiscal-documents-export', FiscalExportController::class)->name('fiscal-documents.export');
     Route::get('/sales/{sale}/danfe-preview', SaleDanfePreviewController::class)
         ->name('sales.danfe-preview');
+    Route::get('/sales/{sale}/danfe-com-logo', SaleLocalDanfeController::class)
+        ->name('sales.danfe-local');
     Route::get('/quotes/{quote}/pdf', QuotePdfController::class)
         ->name('quotes.pdf');
 });

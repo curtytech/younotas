@@ -52,7 +52,7 @@ class StockMovementResource extends CompanyOwnedResource
                     ->searchable(['name', 'sku', 'barcode'])
                     ->preload()
                     ->required()
-                    ->label('Produto'),
+                    ->disabledOn('edit')->label('Produto'),
                 Forms\Components\Select::make('movement_type')
                     ->options([
                         'entry' => 'Entrada',
@@ -61,7 +61,7 @@ class StockMovementResource extends CompanyOwnedResource
                     ])
                     ->required()
                     ->native(false)
-                    ->label('Tipo de movimentação'),
+                    ->disabledOn('edit')->label('Tipo de movimentação'),
                 Forms\Components\Select::make('source_type')
                     ->options([
                         'manual' => 'Manual',
@@ -71,7 +71,7 @@ class StockMovementResource extends CompanyOwnedResource
                     ])
                     ->required()
                     ->native(false)
-                    ->label('Origem'),
+                    ->disabledOn('edit')->label('Origem'),
                 Forms\Components\TextInput::make('reference')
                     ->string()
                     ->maxLength(255)
@@ -80,17 +80,17 @@ class StockMovementResource extends CompanyOwnedResource
                     ->numeric()
                     ->required()
                     ->minValue(0.001)
-                    ->label('Quantidade'),
+                    ->disabledOn('edit')->label('Quantidade'),
                 Forms\Components\TextInput::make('previous_stock')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
-                    ->label('Saldo anterior'),
+                    ->disabled()->dehydrated(false)->label('Saldo anterior'),
                 Forms\Components\TextInput::make('current_stock')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
-                    ->label('Saldo atual'),
+                    ->disabled()->dehydrated(false)->label('Saldo atual'),
                 MoneyInput::make('unit_cost')
                     ->numeric()
                     ->default(0)

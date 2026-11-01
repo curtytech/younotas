@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\SaleResource\RelationManagers;
 
 use App\Filament\Forms\Components\MoneyInput;
-
 use App\Models\Product;
 use Closure;
 use Filament\Forms;
@@ -24,10 +23,10 @@ class SaleItemsRelationManager extends RelationManager
 
     protected static ?string $pluralModelLabel = 'Itens da venda';
 
-
     public function isReadOnly(): bool
     {
-        return ! auth()->user()->canAccessCompany((int) $this->getOwnerRecord()->company_id, 'issue');
+        return $this->getOwnerRecord()->hasLockedNfe()
+            || ! auth()->user()->canAccessCompany((int) $this->getOwnerRecord()->company_id, 'issue');
     }
 
     public function form(Form $form): Form
@@ -107,14 +106,7 @@ class SaleItemsRelationManager extends RelationManager
                         record: $record,
                     ))
                     ->label('Quantidade')
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        $quantity = (float) ($state ?: 0);
-                        $unitPrice = (float) ($get('unit_price') ?: 0);
-                        $discount = (float) ($get('discount_amount') ?: 0);
-                        $tax = (float) ($get('tax_amount') ?: 0);
-
-                        $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
-                    }),
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
                 MoneyInput::make('unit_price')
                     ->numeric()
                     ->required()
@@ -122,42 +114,28 @@ class SaleItemsRelationManager extends RelationManager
                     ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Valor unitário')
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        $quantity = (float) ($get('quantity') ?: 0);
-                        $unitPrice = (float) ($state ?: 0);
-                        $discount = (float) ($get('discount_amount') ?: 0);
-                        $tax = (float) ($get('tax_amount') ?: 0);
-
-                        $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
-                    }),
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
                 MoneyInput::make('discount_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Desconto')
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        $quantity = (float) ($get('quantity') ?: 0);
-                        $unitPrice = (float) ($get('unit_price') ?: 0);
-                        $discount = (float) ($state ?: 0);
-                        $tax = (float) ($get('tax_amount') ?: 0);
+                    ->rule(fn (Get $get): Closure => function (string $attribute, $value, Closure $fail) use ($get): void {
+                        $base = (float) ($get('quantity') ?: 0) * (float) ($get('unit_price') ?: 0) + (float) ($get('tax_amount') ?: 0);
 
-                        $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
-                    }),
+                        if ((float) $value > $base + 0.001) {
+                            $fail('O desconto não pode ser maior que o valor do item.');
+                        }
+                    })
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
                 MoneyInput::make('tax_amount')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->live(onBlur: true)
                     ->label('Impostos')
-                    ->afterStateUpdated(function ($state, callable $get, callable $set): void {
-                        $quantity = (float) ($get('quantity') ?: 0);
-                        $unitPrice = (float) ($get('unit_price') ?: 0);
-                        $discount = (float) ($get('discount_amount') ?: 0);
-                        $tax = (float) ($state ?: 0);
-
-                        $set('total_amount', ($quantity * $unitPrice) - $discount + $tax);
-                    }),
+                    ->afterStateUpdated(fn ($state, callable $get, callable $set) => static::updateItemTotal($get, $set)),
                 MoneyInput::make('icms_base_calculo')->label('Base de cálculo ICMS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
                 MoneyInput::make('pis_base_calculo')->label('Base de cálculo PIS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
                 MoneyInput::make('cofins_base_calculo')->label('Base de cálculo COFINS')->numeric()->minValue(0)->helperText('Obrigatória quando houver destaque com alíquota positiva.'),
@@ -203,6 +181,16 @@ class SaleItemsRelationManager extends RelationManager
             ]);
     }
 
+    protected static function updateItemTotal(callable $get, callable $set): void
+    {
+        $quantity = (float) ($get('quantity') ?: 0);
+        $unitPrice = (float) ($get('unit_price') ?: 0);
+        $discount = (float) ($get('discount_amount') ?: 0);
+        $tax = (float) ($get('tax_amount') ?: 0);
+
+        $set('total_amount', max(round(($quantity * $unitPrice) - $discount + $tax, 2), 0));
+    }
+
     protected static function getAvailableStock(int $productId, ?Model $record = null): ?float
     {
         if ($productId <= 0) {
@@ -232,7 +220,7 @@ class SaleItemsRelationManager extends RelationManager
             return null;
         }
 
-        $message = 'Estoque disponivel: ' . number_format($availableStock, 3, ',', '.');
+        $message = 'Estoque disponivel: '.number_format($availableStock, 3, ',', '.');
 
         if ($requestedQuantity > $availableStock) {
             $message .= '. A quantidade informada e maior que o estoque e o item nao sera salvo.';

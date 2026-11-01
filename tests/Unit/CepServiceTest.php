@@ -1,7 +1,11 @@
 <?php
 
 use App\Services\CepService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 test('consulta o CEP e retorna os dados de endereco', function (): void {
     Http::fake([
@@ -40,7 +44,7 @@ test('ignora CEP invalido ou inexistente', function (): void {
 
 test('nao interrompe o cadastro quando o servico de CEP falha', function (): void {
     Http::fake([
-        'https://viacep.com.br/ws/01001000/json/' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'),
+        'https://viacep.com.br/ws/01001000/json/' => fn () => throw new ConnectionException('timeout'),
     ]);
 
     expect(app(CepService::class)->addressFor('01001000'))->toBeNull();

@@ -45,6 +45,8 @@ O e-mail no cadastro de clientes é opcional, inclusive na importação CSV. Qua
 
 Execute `php artisan test` localmente. Para validar o cadastro de clientes e a importação, execute `php artisan test tests/Feature/PanelPagesFunctionalTest.php tests/Feature/CatalogCsvImportTest.php`.
 
+Para os testes reais de navegador com banco e Focus simulada isolados, execute `tests/Browser/run.sh`. O runner cobre desktop e celular sem emitir notas reais nem carregar o `.env` normal. Requisitos, cobertura e limites estão em [tests/Browser/README.md](tests/Browser/README.md).
+
 ## Changelog
 
 ### [0.1.0] - 2026-08-02

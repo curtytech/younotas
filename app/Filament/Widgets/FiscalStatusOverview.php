@@ -3,9 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Resources\FiscalDocumentResource;
-use App\Models\Sale;
 use App\Models\FiscalDocument;
-use App\Models\ServiceOrder;
 use App\Support\NfeStatus;
 use App\Support\NfseStatus;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -24,7 +22,7 @@ class FiscalStatusOverview extends BaseWidget
         $nfseErrors = $count('NFS-e', [NfseStatus::AUTHORIZATION_ERROR, NfseStatus::TRANSPORT_ERROR]);
         $nfeProcessing = $count('NF-e', [NfeStatus::SENDING, NfeStatus::PROCESSING]);
         $nfeAuthorized = $count('NF-e', [NfeStatus::AUTHORIZED]);
-        $nfeErrors = $count('NF-e', [NfeStatus::AUTHORIZATION_ERROR, NfeStatus::TRANSPORT_ERROR]);
+        $nfeErrors = $count('NF-e', [NfeStatus::AUTHORIZATION_ERROR, NfeStatus::TRANSPORT_ERROR, NfeStatus::DENIED, NfeStatus::CANCELLATION_ERROR]);
 
         $attention = FiscalDocument::query()->visibleTo(auth()->user())->needingAttention()->count();
 

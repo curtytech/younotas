@@ -15,7 +15,11 @@ class EditStockMovement extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
 
-        return static::getResource()::normalizeOwnership($data, $this->record);
+        $data = static::getResource()::normalizeOwnership($data, $this->record);
+        foreach (['product_id', 'company_id', 'movement_type', 'source_type', 'quantity', 'previous_stock', 'current_stock'] as $field) {
+            $data[$field] = $this->record->$field;
+        }
+        return $data;
     }
 
     protected function getHeaderActions(): array

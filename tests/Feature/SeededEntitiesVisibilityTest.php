@@ -24,6 +24,7 @@ use App\Models\Technician;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -95,5 +96,5 @@ test('permite apenas transições válidas de status da ordem de serviço', func
     expect($order->fresh()->status)->toBe('in_progress');
 
     expect(fn () => $order->update(['status' => 'billed']))
-        ->toThrow(InvalidArgumentException::class);
+        ->toThrow(ValidationException::class);
 });

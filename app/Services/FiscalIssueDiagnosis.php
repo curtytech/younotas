@@ -4,11 +4,19 @@ namespace App\Services;
 
 use App\Models\FiscalDocument;
 use App\Support\NfeStatus;
+use Illuminate\Database\QueryException;
 
 /** Turns stored provider answers into a short explanation, the field to fix and the next step. */
 class FiscalIssueDiagnosis
 {
     public const STUCK_AFTER_MINUTES = 30;
+
+    public static function failureMessage(\Throwable $exception): string
+    {
+        return $exception instanceof QueryException
+            ? 'Não foi possível salvar o resultado da operação fiscal. Consulte a situação da nota antes de tentar novamente. Se o problema continuar, entre em contato com o suporte.'
+            : $exception->getMessage();
+    }
 
     private const CODE_HINTS = [
         'permissao_negada' => 'A credencial não tem permissão para este emitente ou ambiente. Confira o token e a habilitação da empresa na Focus.',
@@ -26,6 +34,12 @@ class FiscalIssueDiagnosis
         $error = $document->last_error ?? [];
         $response = is_array($error['response'] ?? null) ? $error['response'] : ($document->raw_response ?? []);
         $details = $this->details($response);
+
+        if (is_a($error['exception'] ?? '', QueryException::class, true)
+            || str_contains((string) ($error['message'] ?? ''), 'SQLSTATE[')) {
+            return $this->result('persistence', 'Não foi possível salvar o resultado da operação fiscal.', [],
+                'Consulte a situação da nota antes de tentar novamente. Se o problema continuar, entre em contato com o suporte.');
+        }
 
         if (blank($document->fiscal_connection_id) || blank($document->environment)) {
             return $this->result('reconciliation', 'Origem da emissão não confirmada.', $details, 'Reconcilie a origem antes de consultar, reenviar ou cancelar.');

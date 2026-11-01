@@ -75,7 +75,7 @@ it('migra as credenciais legadas para conexões e mantém os campos de token vaz
 
     Livewire::test(EditFocusNfeSetting::class, ['record' => $setting->getRouteKey()])
         ->assertFormSet(['settings.environment' => 'producao', 'settings.api_keys.producao' => null, 'settings.api_keys.homologacao' => null])
-        ->fillForm(['settings.environment' => 'homologacao', 'settings.api_keys.homologacao' => 'tok-hml', 'settings.nfse.natureza_operacao' => '1', 'settings.nfe.local_destino' => 1])
+        ->fillForm(['settings.environment' => 'homologacao', 'settings.api_keys.homologacao' => 'tok-hml', 'settings.nfse.natureza_operacao' => '1'])
         ->call('save')
         ->assertHasNoFormErrors();
 

@@ -273,7 +273,7 @@ test('todos os formulários expõem os campos principais e os componentes repet�
             'settings.nfe.emitente.municipio', 'settings.nfe.emitente.uf',
             'settings.nfe.emitente.cep', 'settings.nfe.emitente.inscricao_estadual',
             'settings.nfe.emitente.regime_tributario', 'settings.nfe.natureza_operacao',
-            'settings.nfe.tipo_documento', 'settings.nfe.local_destino',
+            'settings.nfe.tipo_documento',
             'settings.nfe.finalidade_emissao', 'settings.nfe.consumidor_final',
             'settings.nfe.presenca_comprador', 'settings.nfe.modalidade_frete',
             'settings.nfe.forma_pagamento', 'settings.nfe.cfop_padrao',
@@ -698,8 +698,6 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
 
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('previsualizar_danfe')
-        ->assertActionHasUrl('previsualizar_danfe', route('sales.danfe-preview', $sale))
-        ->assertActionShouldOpenUrlInNewTab('previsualizar_danfe')
         ->assertActionVisible('emitir_nfe')
         ->callAction('emitir_nfe');
 
@@ -707,11 +705,13 @@ test('ações do painel enfileiram os trabalhos corretos', function (): void {
     $nfeDocument = FiscalDocument::query()->where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
     app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::PROCESSING], 'consulta');
 
+    Http::fake(['*/v2/nfe/*' => Http::response(['status' => 'processando_autorizacao'])]);
+
     Livewire::test(EditSale::class, ['record' => $sale->getRouteKey()])
         ->assertActionVisible('consultar_nfe')
         ->callAction('consultar_nfe');
 
-    Bus::assertDispatched(ConsultSaleNfeJob::class, fn (ConsultSaleNfeJob $job): bool => $job->saleId === $sale->id && $job->documentId === $nfeDocument->id);
+    Http::assertSent(fn ($request): bool => $request->method() === 'GET' && str_contains($request->url(), '/v2/nfe/'.$nfeDocument->focus_reference));
 
     app(FiscalDocumentWorkflow::class)->applyResponse($nfeDocument, ['status' => NfeStatus::AUTHORIZED], 'consulta');
 

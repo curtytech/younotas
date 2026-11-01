@@ -10,14 +10,11 @@ use App\Jobs\ConsultServiceNfseJob;
 use App\Jobs\EmitSaleNfeJob;
 use App\Jobs\EmitServiceNfseJob;
 use App\Models\FiscalDocument;
-use App\Models\Sale;
 use App\Services\FiscalIssueDiagnosis;
-use App\Models\ServiceOrder;
 use App\Support\NfeStatus;
 use App\Support\NfseStatus;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Form;
-use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,7 +39,6 @@ class FiscalDocumentResource extends CompanyOwnedResource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
-
 
         return $query;
     }
@@ -98,7 +94,7 @@ class FiscalDocumentResource extends CompanyOwnedResource
                         'processando', 'enviando' => 'warning',
                         'cancelado' => 'gray',
                         'denegado' => 'danger',
-                        'erro_autorizacao', 'erro_emissao' => 'danger',
+                        'erro_autorizacao', 'erro_emissao', 'erro_cancelamento' => 'danger',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
@@ -106,7 +102,8 @@ class FiscalDocumentResource extends CompanyOwnedResource
                         'processando', 'enviando' => 'Processando',
                         'cancelado' => 'Cancelada',
                         'denegado' => 'Denegada',
-                        'erro_autorizacao' => 'Erro de autorização',
+                        'erro_autorizacao' => 'Rejeitada',
+                        'erro_cancelamento' => 'Erro no cancelamento',
                         'erro_emissao' => 'Erro de envio',
                         default => 'Não emitida',
                     })
@@ -171,7 +168,8 @@ class FiscalDocumentResource extends CompanyOwnedResource
                         'processando' => 'Processando',
                         'autorizado' => 'Autorizada',
                         'cancelado' => 'Cancelada',
-                        'erro_autorizacao' => 'Erro de autorização',
+                        'erro_autorizacao' => 'Rejeitada',
+                        'erro_cancelamento' => 'Erro no cancelamento',
                         'erro_emissao' => 'Erro de envio',
                     ])
                     ->label('Situação'),
@@ -255,6 +253,7 @@ class FiscalDocumentResource extends CompanyOwnedResource
                 'emit' => EmitSaleNfeJob::dispatch((int) $record->source_id, $record->id),
                 'cancel' => CancelSaleNfeJob::dispatch((int) $record->source_id, $justification, $record->id),
             };
+
             return;
         }
         match ($operation) {
