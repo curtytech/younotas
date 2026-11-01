@@ -83,7 +83,7 @@ class CompanyResource extends Resource
                         ->disk('public')
                         ->directory('companies/logos')
                         ->maxSize(2048)
-                        ->helperText('Envie uma logo para aparecer no PDF dos orçamentos.'),
+                        ->helperText('Envie uma logo para aparecer no PDF dos orçamentos e na DANFE com logo.'),
                 ])->columns(2)->columnSpanFull(),
             Forms\Components\Toggle::make('is_active')->label('Empresa ativa')->default(true)
                 ->helperText('Desativar preserva o histórico fiscal e impede novas operações.'),

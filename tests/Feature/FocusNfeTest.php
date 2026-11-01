@@ -278,3 +278,57 @@ test('histórico fiscal mostra número, série e chave da NF-e autorizada', func
         ->and($document->series)->toBe('1')
         ->and($document->access_key)->toBe('33261028480405000193550010000000091261896629');
 });
+
+function authorizeSaleWithXml($test, ?string $xml = null): void
+{
+    Http::fake([
+        'https://homologacao.focusnfe.com.br/v2/nfe?*' => Http::response(['status' => 'processando'], 202),
+        'https://homologacao.focusnfe.com.br/v2/nfe/*' => Http::response([
+            'status' => 'autorizado', 'numero' => '7', 'caminho_danfe' => '/arquivos/danfe.pdf',
+            'caminho_xml_nota_fiscal' => '/arquivos/nota.xml',
+        ], 200),
+        'https://homologacao.focusnfe.com.br/arquivos/nota.xml' => Http::response($xml ?? file_get_contents(base_path('tests/Fixtures/nfe-autorizada.xml')), 200),
+    ]);
+    app(EmitSaleNfeAction::class)->execute($test->sale);
+    app(ConsultSaleNfeAction::class)->execute($test->sale->refresh());
+    $test->sale->refresh();
+}
+
+test('gera a DANFE com logo a partir do XML autorizado e mantém a DANFE da Focus', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('local');
+    \Illuminate\Support\Facades\Storage::fake('public');
+    $image = imagecreatetruecolor(120, 80);
+    ob_start();
+    imagepng($image);
+    \Illuminate\Support\Facades\Storage::disk('public')->put('companies/logos/logo.png', ob_get_clean());
+    $this->sale->company->update(['logo_path' => 'companies/logos/logo.png']);
+    authorizeSaleWithXml($this);
+
+    $response = $this->actingAs($this->user)->get(route('sales.danfe-local', $this->sale));
+
+    $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    expect(substr($response->getContent(), 0, 4))->toBe('%PDF')
+        ->and($this->sale->focus_nfe_url)->toBe('https://homologacao.focusnfe.com.br/arquivos/danfe.pdf');
+    $document = $this->sale->fiscalDocuments()->first();
+    \Illuminate\Support\Facades\Storage::disk('local')->assertExists($document->xml_path);
+
+    // A segunda abertura usa o XML guardado, sem novo download.
+    Http::fake();
+    $this->actingAs($this->user)->get(route('sales.danfe-local', $this->sale))->assertOk();
+    Http::assertNothingSent();
+});
+
+test('não gera DANFE com logo para nota não autorizada nem para outro usuário', function (): void {
+    $this->actingAs($this->user)->get(route('sales.danfe-local', $this->sale))->assertRedirect();
+
+    $other = User::factory()->create(['role' => 'enterprise']);
+    $this->actingAs($other)->get(route('sales.danfe-local', $this->sale))->assertForbidden();
+});
+
+test('recusa XML da Focus que não é de NF-e autorizada', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('local');
+    authorizeSaleWithXml($this, '<erro/>');
+
+    expect(fn () => app(\App\Services\LocalDanfeService::class)->render($this->sale))
+        ->toThrow(RuntimeException::class, 'não é de uma NF-e autorizada');
+});

@@ -48,6 +48,15 @@ class EditSale extends EditRecord
                 ->visible(fn (): bool => $this->record->focus_nfe_status === NfeStatus::AUTHORIZED && filled($this->record->focus_nfe_url))
                 ->url(fn (): ?string => $this->record->focus_nfe_url)
                 ->openUrlInNewTab(),
+            Actions\Action::make('abrir_danfe_logo')
+                ->label('DANFE com logo')
+                ->icon('heroicon-o-photo')
+                ->color('success')
+                ->outlined()
+                ->tooltip('DANFE gerada pelo younNotas a partir do XML, com a logo da empresa')
+                ->visible(fn (): bool => $this->record->focus_nfe_status === NfeStatus::AUTHORIZED)
+                ->url(fn (): string => route('sales.danfe-local', $this->record))
+                ->openUrlInNewTab(),
             Actions\Action::make('emitir_nfe')
                 ->label(fn (): string => match (true) {
                     NfeStatus::requiresNewReference($this->record->focus_nfe_status) => 'Emitir nova NF-e',

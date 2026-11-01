@@ -509,6 +509,12 @@ class SaleResource extends CompanyOwnedResource
                     ->action(fn (Sale $record) => static::consultNow($record)),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\EditAction::make(),
+                    Tables\Actions\Action::make('abrir_danfe_logo')
+                        ->label('DANFE com logo')
+                        ->icon('heroicon-o-photo')
+                        ->visible(fn (Sale $record): bool => $record->focus_nfe_status === NfeStatus::AUTHORIZED)
+                        ->url(fn (Sale $record): string => route('sales.danfe-local', $record))
+                        ->openUrlInNewTab(),
                     static::emitTableAction('reenviar_nfe')
                         ->visible(fn (Sale $record): bool => NfeStatus::hasProblem($record->focus_nfe_status) && static::canEmit($record)),
                     Tables\Actions\Action::make('previsualizar_danfe')
