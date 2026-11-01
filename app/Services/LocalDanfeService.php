@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\FiscalDocument;
 use App\Models\Sale;
 use App\Support\NfeStatus;
+use DOMDocument;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Storage;
 use NFePHP\DA\NFe\Danfe;
 use RuntimeException;
@@ -54,9 +56,28 @@ class LocalDanfeService
     {
         $disk = Storage::disk('local');
         if (filled($document->xml_path) && $disk->exists($document->xml_path)) {
-            return $disk->get($document->xml_path);
+            $xml = (string) $disk->get($document->xml_path);
+            $this->guardXmlBelongsTo($xml, $document);
+
+            return $xml;
         }
 
+        try {
+            $xml = $this->downloadXml($document);
+        } catch (ConnectionException) {
+            throw new RuntimeException('Não foi possível falar com a Focus para baixar o XML da nota. Tente de novo em alguns minutos.');
+        }
+        $this->guardXmlBelongsTo($xml, $document);
+
+        $xmlPath = 'fiscal/xml/'.$document->company_id.'/'.$document->id.'.xml';
+        $disk->put($xmlPath, $xml);
+        $document->forceFill(['xml_path' => $xmlPath])->save();
+
+        return $xml;
+    }
+
+    protected function downloadXml(FiscalDocument $document): string
+    {
         $config = $this->configService->forDocument($document);
         $path = data_get($document->raw_response, 'caminho_xml_nota_fiscal');
         if (blank($path)) {
@@ -67,16 +88,25 @@ class LocalDanfeService
             throw new RuntimeException('A Focus ainda não disponibilizou o XML desta NF-e. Tente de novo em alguns minutos.');
         }
 
-        $xml = $this->apiClient->download($config, (string) $path);
-        if (! str_contains($xml, '<protNFe') || ! str_contains($xml, '<infNFe')) {
+        return $this->apiClient->download($config, (string) $path);
+    }
+
+    /** Garante que o XML é a NF-e autorizada deste documento, no mesmo ambiente. */
+    protected function guardXmlBelongsTo(string $xml, FiscalDocument $document): void
+    {
+        $dom = new DOMDocument;
+        $loaded = $xml !== '' && @$dom->loadXML($xml, LIBXML_NONET);
+        $text = fn (string $tag): string => $loaded ? trim((string) $dom->getElementsByTagName($tag)->item(0)?->textContent) : '';
+        $key = $text('chNFe');
+        $expectedKey = preg_replace('/\D/', '', (string) ($document->access_key ?: data_get($document->raw_response, 'chave_nfe')));
+        $expectedEnvironment = $document->environment === 'producao' ? '1' : '2';
+
+        if (! $loaded || $key === '' || ! in_array($text('cStat'), ['100', '150'], true)) {
             throw new RuntimeException('O XML recebido da Focus não é de uma NF-e autorizada.');
         }
-
-        $xmlPath = 'fiscal/xml/'.$document->company_id.'/'.$document->id.'.xml';
-        $disk->put($xmlPath, $xml);
-        $document->forceFill(['xml_path' => $xmlPath])->save();
-
-        return $xml;
+        if ($expectedKey === '' || $key !== $expectedKey || $text('tpAmb') !== $expectedEnvironment) {
+            throw new RuntimeException('O XML recebido não corresponde a esta NF-e. Atualize a situação da nota e tente de novo.');
+        }
     }
 
     /** Converte a logo para JPEG, formato aceito pela biblioteca, sem depender do formato enviado. */
@@ -87,14 +117,24 @@ class LocalDanfeService
             return null;
         }
 
-        $image = @imagecreatefromstring((string) Storage::disk('public')->get($path));
+        $contents = (string) Storage::disk('public')->get($path);
+        $size = @getimagesizefromstring($contents);
+        // Evita decodificar imagens gigantes que esgotariam a memória do processo.
+        if ($size === false || $size[0] * $size[1] > 16_000_000) {
+            return null;
+        }
+
+        $image = @imagecreatefromstring($contents);
         if ($image === false) {
             return null;
         }
 
-        $canvas = imagecreatetruecolor(imagesx($image), imagesy($image));
+        $scale = min(1, 600 / max(imagesx($image), imagesy($image)));
+        $width = max(1, (int) round(imagesx($image) * $scale));
+        $height = max(1, (int) round(imagesy($image) * $scale));
+        $canvas = imagecreatetruecolor($width, $height);
         imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
-        imagecopy($canvas, $image, 0, 0, 0, 0, imagesx($image), imagesy($image));
+        imagecopyresampled($canvas, $image, 0, 0, 0, 0, $width, $height, imagesx($image), imagesy($image));
         ob_start();
         imagejpeg($canvas, null, 90);
         $jpeg = (string) ob_get_clean();

@@ -285,7 +285,7 @@ function authorizeSaleWithXml($test, ?string $xml = null): void
         'https://homologacao.focusnfe.com.br/v2/nfe?*' => Http::response(['status' => 'processando'], 202),
         'https://homologacao.focusnfe.com.br/v2/nfe/*' => Http::response([
             'status' => 'autorizado', 'numero' => '7', 'caminho_danfe' => '/arquivos/danfe.pdf',
-            'caminho_xml_nota_fiscal' => '/arquivos/nota.xml',
+            'caminho_xml_nota_fiscal' => '/arquivos/nota.xml', 'chave_nfe' => 'NFe35261112345678000195550010000000071000000071',
         ], 200),
         'https://homologacao.focusnfe.com.br/arquivos/nota.xml' => Http::response($xml ?? file_get_contents(base_path('tests/Fixtures/nfe-autorizada.xml')), 200),
     ]);
@@ -331,4 +331,28 @@ test('recusa XML da Focus que não é de NF-e autorizada', function (): void {
 
     expect(fn () => app(\App\Services\LocalDanfeService::class)->render($this->sale))
         ->toThrow(RuntimeException::class, 'não é de uma NF-e autorizada');
+});
+
+test('recusa XML de outra nota, inclusive do cache', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('local');
+    $other = str_replace('0000000071000000071', '0000000081000000081', file_get_contents(base_path('tests/Fixtures/nfe-autorizada.xml')));
+    authorizeSaleWithXml($this, $other);
+
+    expect(fn () => app(\App\Services\LocalDanfeService::class)->render($this->sale))
+        ->toThrow(RuntimeException::class, 'não corresponde a esta NF-e');
+    expect($this->sale->fiscalDocuments()->first()->xml_path)->toBeNull();
+
+    \Illuminate\Support\Facades\Storage::disk('local')->put('fiscal/xml/antigo.xml', $other);
+    $this->sale->fiscalDocuments()->update(['xml_path' => 'fiscal/xml/antigo.xml']);
+    expect(fn () => app(\App\Services\LocalDanfeService::class)->render($this->sale))
+        ->toThrow(RuntimeException::class, 'não corresponde a esta NF-e');
+});
+
+test('mostra mensagem quando a Focus está fora do ar ao baixar o XML', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('local');
+    authorizeSaleWithXml($this, '<erro/>');
+    Http::swap(new \Illuminate\Http\Client\Factory);
+    Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'));
+
+    $this->actingAs($this->user)->get(route('sales.danfe-local', $this->sale))->assertRedirect();
 });
