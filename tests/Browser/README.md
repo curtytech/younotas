@@ -8,7 +8,7 @@ tests/Browser/run.sh
 
 Requisitos: Bash, curl, bun, PHP CLI 8.2+ com as extensões do projeto (incluindo SQLite) e Chromium. O runner usa /usr/bin/php; configure BROWSER_TEST_PHP para outro PHP nativo. Não use o wrapper lerd sem repassar as variáveis de ambiente ao contêiner.
 
-Playwright 1.56.1 é instalado somente num diretório temporário; package.json e lockfiles do projeto não são alterados. O Chromium disponível nesta máquina é usado pelo caminho padrão do runner. Configure CHROMIUM_PATH se o navegador estiver em outro local.
+Playwright 1.56.1 é instalado somente num diretório temporário; package.json e lockfiles do projeto não são alterados. O Chromium disponível nesta máquina é usado pelo caminho padrão do runner. Configure CHROMIUM_PATH se o navegador estiver em outro local. Em Ubuntu 26.04 o Playwright 1.56.1 não instala o Chromium sem `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`; se faltar `libasound.so.2` e não houver sudo, extraia `libasound2t64` com `apt-get download` + `dpkg -x` e rode com `LD_LIBRARY_PATH` apontando para a biblioteca.
 
 ## Isolamento
 
@@ -31,6 +31,7 @@ Em 1440×900 e 390×844:
 - Confirmação de emissão com clique duplo: somente um POST fiscal por venda.
 - Estado autorizado, bloqueio de nova emissão e abertura da DANFE simulada.
 - Ausência de erros JavaScript e overflow horizontal no formulário do cliente.
+- Orçamento (quote.mjs): produto e serviço no mesmo orçamento, aviso de que o serviço não entra na venda (só no item de serviço), PDF do orçamento, gerar venda só com os produtos, emissão de NF-e com clique duplo (uma única emissão), DANFE autorizada e bloqueio de nova venda pelo mesmo orçamento.
 
 A validação da interface com respostas 401/422/429/5xx/timeout, CFOP interestadual, estoque insuficiente, descontos e outros tipos de documento ainda precisa ser ampliada. Esses casos não devem ser considerados cobertos por este runner apenas porque existem testes de integração.
 

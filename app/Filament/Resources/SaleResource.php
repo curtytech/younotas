@@ -127,6 +127,7 @@ class SaleResource extends CompanyOwnedResource
                             ->required()
                             ->disabled(fn (?Sale $record): bool => (bool) $record?->hasLockedNfe())
                             ->validationMessages(['required' => 'Escolha o cliente. A NF-e precisa de um destinatário.'])
+                            ->columnSpanFull()
                             ->label('Cliente'),
                         Forms\Components\DatePicker::make('sale_date')
                             ->required()
@@ -136,8 +137,8 @@ class SaleResource extends CompanyOwnedResource
                             ->maxDate(now())
                             ->label('Data da venda'),
                         Forms\Components\Textarea::make('notes')
-                            ->rows(2)
-                            ->autosize()
+                            ->rows(3)
+                            ->extraInputAttributes(['style' => 'max-height: 8rem; overflow-y: auto;'])
                             ->maxLength(65535)
                             ->placeholder('Informações internas ou combinados com o cliente')
                             ->columnSpanFull()
@@ -375,20 +376,18 @@ class SaleResource extends CompanyOwnedResource
             ->emptyStateHeading('Nenhuma venda registrada')
             ->emptyStateDescription('Crie a primeira venda para baixar o estoque e emitir a NF-e.')
             ->columns([
-                Tables\Columns\TextColumn::make('id')
-                    ->searchable()
-                    ->sortable()
-                    ->formatStateUsing(fn (Sale $record): string => '#'.($record->number ?: $record->id))
-                    ->description(fn (Sale $record): string => $record->sale_date?->format('d/m/Y') ?? '')
-                    ->weight(FontWeight::Bold)
-                    ->label('Venda'),
-                Tables\Columns\TextColumn::make('client.name')
-                    ->searchable()
-                    ->placeholder('Sem cliente')
-                    ->description(fn (Sale $record): ?string => static::userHasManyCompanies() ? Str::limit((string) $record->company?->name, 24) : null)
-                    ->limit(32)
-                    ->tooltip(fn (Sale $record): ?string => mb_strlen((string) $record->client?->name) > 32 ? $record->client?->name : null)
-                    ->label('Cliente'),
+                Tables\Columns\ViewColumn::make('id')->label('Venda')->sortable()
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where(fn (Builder $query): Builder => $query
+                        ->where('id', 'like', "%{$search}%")
+                        ->orWhere('number', 'like', "%{$search}%")
+                        ->orWhereHas('client', fn (Builder $client): Builder => $client->where('name', 'like', "%{$search}%"))))
+                    ->view('filament.tables.columns.record-heading')
+                    ->viewData(fn (Sale $record): array => [
+                        'title' => '#'.($record->number ?: $record->id),
+                        'date' => $record->sale_date?->format('d/m/Y'),
+                        'client' => $record->client?->name,
+                        'company' => static::userHasManyCompanies() ? $record->company?->name : null,
+                    ]),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {

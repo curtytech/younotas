@@ -35,7 +35,9 @@ done
 [[ "$ready" == true ]] || { echo 'Servidor isolado não iniciou ou a porta pertence a outro processo.' >&2; cat "$dir/server.log"; exit 1; }
 cd "$dir/pkg"
 bun add --no-save --no-progress playwright@1.56.1 >/dev/null
-export CHROMIUM_PATH="${CHROMIUM_PATH:-$HOME/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome}"
+export CHROMIUM_PATH="${CHROMIUM_PATH:-$HOME/.cache/ms-playwright/chromium-1194/chrome-linux/chrome}"
 export PLAYWRIGHT_MODULE="$dir/pkg/node_modules/playwright/index.mjs"
 cd - >/dev/null
-bun tests/Browser/login.mjs || { cat "$dir/server.log"; exit 1; }
+for script in login quote; do
+    bun "tests/Browser/$script.mjs" || { cat "$dir/server.log"; exit 1; }
+done

@@ -20,6 +20,7 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 
 class QuoteResource extends CompanyOwnedResource
@@ -67,6 +68,7 @@ class QuoteResource extends CompanyOwnedResource
                             ->where('company_id', $get('company_id'))
                             ->orderBy('name')->pluck('name', 'id')->all())
                         ->searchable()->preload()->native(false)->required()
+                        ->columnSpanFull()
                         ->label('Cliente'),
                     Forms\Components\DatePicker::make('quote_date')
                         ->required()->native(false)->displayFormat('d/m/Y')->default(now())->live()
@@ -77,7 +79,8 @@ class QuoteResource extends CompanyOwnedResource
                         ->helperText('Até quando os preços valem.')
                         ->label('Validade'),
                     Forms\Components\Textarea::make('notes')
-                        ->rows(2)->autosize()->maxLength(65535)->columnSpanFull()
+                        ->rows(3)->maxLength(65535)->columnSpanFull()
+                        ->extraInputAttributes(['style' => 'max-height: 8rem; overflow-y: auto;'])
                         ->placeholder('Condições de pagamento, prazo de entrega, garantia…')
                         ->helperText('Aparece no PDF enviado ao cliente.')
                         ->label('Observações'),
@@ -134,6 +137,7 @@ class QuoteResource extends CompanyOwnedResource
                             ? $state['name'].' — '.static::money(static::itemTotal($state))
                             : 'Novo item')
                         ->schema([
+                            Forms\Components\Grid::make(['default' => 1, 'md' => 12])->columnSpanFull()->schema([
                             Forms\Components\ToggleButtons::make('item_type')
                                 ->options(['product' => 'Produto', 'service' => 'Serviço'])
                                 ->icons(['product' => 'heroicon-m-cube', 'service' => 'heroicon-m-wrench-screwdriver'])
@@ -145,8 +149,19 @@ class QuoteResource extends CompanyOwnedResource
                                     $set('unit', 'UN');
                                     $set('unit_price', 0);
                                 })
-                                ->columnSpanFull()
+                                ->columnSpan(['default' => 1, 'md' => 4, 'lg' => 3])
                                 ->hiddenLabel(),
+                            Forms\Components\Placeholder::make('service_notice')
+                                ->hiddenLabel()
+                                ->content(new HtmlString(
+                                    '<div role="note" style="display: flex; gap: .5rem; align-items: flex-start; padding: .625rem .75rem; border-radius: .5rem; '
+                                    .'background: rgba(var(--info-500), .1); border: 1px solid rgba(var(--info-500), .3);">'
+                                    .svg('heroicon-m-information-circle', '', ['style' => 'width: 1.25rem; height: 1.25rem; flex-shrink: 0; color: rgb(var(--info-500));', 'aria-hidden' => 'true'])->toHtml()
+                                    .'<span class="text-sm">Este serviço não entra na venda gerada pelo orçamento. Só os produtos são convertidos; fature o serviço por uma ordem de serviço.</span></div>'
+                                ))
+                                ->visible(fn (Get $get): bool => $get('item_type') === 'service')
+                                ->columnSpan(['default' => 1, 'md' => 8, 'lg' => 9]),
+                            ]),
                             Forms\Components\Select::make('product_id')
                                 ->options(fn (Get $get): array => Product::query()
                                     ->where('company_id', $get('../../company_id'))->where('is_active', true)
@@ -250,11 +265,17 @@ class QuoteResource extends CompanyOwnedResource
             ->emptyStateHeading('Nenhum orçamento ainda')
             ->emptyStateDescription('Monte um orçamento, envie o PDF ao cliente e gere a venda quando ele aprovar.')
             ->columns([
-                Tables\Columns\TextColumn::make('number')->label('Número')->searchable()->sortable()
-                    ->weight(FontWeight::Bold)
-                    ->description(fn (Quote $record): string => $record->quote_date?->format('d/m/Y') ?? ''),
-                Tables\Columns\TextColumn::make('client.name')->label('Cliente')->searchable()->limit(40)
-                    ->tooltip(fn (Quote $record): ?string => mb_strlen((string) $record->client?->name) > 40 ? $record->client?->name : null),
+                Tables\Columns\ViewColumn::make('number')->label('Orçamento')->sortable()
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where(fn (Builder $query): Builder => $query
+                        ->where('number', 'like', "%{$search}%")
+                        ->orWhereHas('client', fn (Builder $client): Builder => $client->where('name', 'like', "%{$search}%"))))
+                    ->view('filament.tables.columns.record-heading')
+                    ->viewData(fn (Quote $record): array => [
+                        'title' => $record->number,
+                        'date' => $record->quote_date?->format('d/m/Y'),
+                        'client' => $record->client?->name,
+                        'company' => null,
+                    ]),
                 Tables\Columns\TextColumn::make('valid_until')->date('d/m/Y')->label('Validade')->sortable()
                     ->placeholder('Sem validade')
                     ->color(fn (Quote $record): ?string => $record->isExpired() ? 'danger' : null)

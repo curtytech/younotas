@@ -32,5 +32,6 @@ class DatabaseSeeder extends Seeder
         $this->call(AllTablesSeeder::class);
         $this->call(FiscalDocumentSeeder::class);
         $this->call(CompanyOwnershipSeeder::class);
+        $this->call(QuoteSeeder::class);
     }
 }

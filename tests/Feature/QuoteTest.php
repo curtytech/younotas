@@ -116,3 +116,13 @@ test('editar orçamento pelo formulário recalcula o total', function (): void {
 
     expect((float) $this->quote->fresh()->total_amount)->toBe(50.0);
 });
+
+test('item de serviço avisa que não entra na venda gerada', function (): void {
+    $notice = 'Este serviço não entra na venda gerada pelo orçamento';
+
+    Livewire::test(EditQuote::class, ['record' => $this->quote->getRouteKey()])->assertDontSee($notice);
+
+    $this->quote->items()->create(['item_type' => 'service', 'service_id' => $this->service->id, 'name' => $this->service->name, 'unit' => 'UN', 'quantity' => 1, 'unit_price' => 100]);
+
+    Livewire::test(EditQuote::class, ['record' => $this->quote->getRouteKey()])->assertSee($notice);
+});

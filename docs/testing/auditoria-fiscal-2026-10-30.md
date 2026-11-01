@@ -39,3 +39,11 @@ No ambiente lerd, variáveis do host não foram repassadas pelo wrapper php. A e
 ## Revisão dos testes de navegador
 
 O Terra entregou a base e um login móvel. A revisão do agente principal corrigiu o isolamento, o conflito de porta e o fake com chave duplicada, e implementou o fluxo de cadastro até DANFE nos dois layouts. Foram corrigidos também o nome acessível do menu da venda e a exposição de SQL nos erros fiscais. Os testes da aplicação passaram com 239 testes e dois testes reais opt-in ignorados por padrão.
+
+## Atualização — 01/11/2026
+
+O primeiro teste real agora parte de um orçamento com produto e serviço, gera a venda por `ConvertQuoteToSaleAction` (a mesma ação do botão "Gerar venda") e usa `PreviewSaleDanfeAction`, `EmitSaleNfeAction` e `ConsultSaleNfeAction`, as mesmas ações da tela. Em homologação: prévia em PDF, NF-e autorizada e DANFE baixada; a venda contém só o produto.
+
+A configuração é gerada na VPS com `FocusNfeConfigService::forCompany(Company 2, 'homologacao')`, recusando qualquer host que não seja o de homologação, e gravada em `storage/app/private/focus-audit-config.json` (ignorado pelo Git, permissão 600):
+
+    FOCUS_AUDIT_EMIT=1 FOCUS_AUDIT_CONFIG=$PWD/storage/app/private/focus-audit-config.json php artisan test --group=live-focus

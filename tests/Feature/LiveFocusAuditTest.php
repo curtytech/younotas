@@ -1,30 +1,38 @@
 <?php
 
+use App\Actions\ConsultSaleNfeAction;
+use App\Actions\ConvertQuoteToSaleAction;
+use App\Actions\EmitSaleNfeAction;
+use App\Actions\PreviewSaleDanfeAction;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Product;
-use App\Models\Sale;
-use App\Models\SaleItem;
+use App\Models\Quote;
+use App\Models\Service;
 use App\Models\User;
 use App\Services\FocusApiClient;
-use App\Services\FocusDanfePreviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('auditoria opt-in gera DANFE real somente em homologação', function () {
+test('auditoria opt-in: orçamento com produto e serviço vira venda, DANFE e NF-e reais em homologação', function () {
     $path = getenv('FOCUS_AUDIT_CONFIG');
     if (! $path) {
         $this->markTestSkipped('Defina FOCUS_AUDIT_CONFIG com arquivo privado para executar a auditoria real.');
     }
-    \Illuminate\Support\Facades\Http::allowStrayRequests(['https://homologacao.focusnfe.com.br/v2/nfe*']);
+    \Illuminate\Support\Facades\Http::allowStrayRequests(['https://homologacao.focusnfe.com.br/*']);
     $rows = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-    $row = collect($rows)->first(fn ($row) => $row['company_id'] === 2 && $row['environment'] === 'homologacao');
-    $config = $row['config'];
+    $config = collect($rows)->first(fn ($row) => $row['company_id'] === 2 && $row['environment'] === 'homologacao')['config'];
     expect($config['base_url'])->toBe('https://homologacao.focusnfe.com.br');
+
+    // Empresa local com o emitente e o token de homologação; o resto é sintético.
     $user = User::factory()->create(['role' => 'admin']);
-    $company = Company::factory()->create(['cnpj' => data_get($config, 'prestador.cnpj'), 'default_environment' => 'homologacao']);
-    $config['company_id'] = $company->id;
+    $company = Company::factory()->create(['cnpj' => data_get($config, 'prestador.cnpj'), 'default_environment' => 'homologacao',
+        'fiscal_settings' => ['prestador' => $config['prestador'] ?? [], 'nfe' => ['emitente' => data_get($config, 'nfe.emitente', [])]]]);
+    $company->connections()->create(['provider' => 'focus', 'environment' => 'homologacao', 'api_key' => $config['api_key'], 'enabled' => true]);
+    $user->companies()->attach($company, ['role' => 'owner']);
+    $user->update(['primary_company_id' => $company->id]);
+    $this->actingAs($user);
     $client = Client::factory()->create([
         'user_id' => $user->id, 'company_id' => $company->id,
         'name' => 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL',
@@ -34,43 +42,39 @@ test('auditoria opt-in gera DANFE real somente em homologação', function () {
     ]);
     $product = Product::factory()->create([
         'user_id' => $user->id, 'company_id' => $company->id, 'name' => 'Produto de teste sem valor fiscal',
-        'ncm_code' => '87089990', 'cfop_code' => '5102', 'stock_quantity' => 10,
+        'ncm_code' => '87089990', 'cfop_code' => '5102', 'stock_quantity' => 10, 'sale_price' => 25,
         'icms_aliquot' => 0, 'pis_aliquot' => 0, 'cofins_aliquot' => 0, 'ipi_aliquot' => 0,
     ]);
-    $sale = Sale::factory()->create(['user_id' => $user->id, 'company_id' => $company->id, 'client_id' => $client->id]);
-    SaleItem::factory()->create(['sale_id' => $sale->id, 'product_id' => $product->id]);
-    $payload = app(FocusDanfePreviewService::class)->buildPayload($sale->fresh(), $config);
-    $response = app(FocusApiClient::class)->post($config, '/v2/nfe/danfe', $payload, [], 'application/pdf');
-    expect($response->status())->toBe(200);
-    expect(substr($response->body(), 0, 4))->toBe('%PDF');
+    $service = Service::factory()->create(['user_id' => $user->id, 'company_id' => $company->id, 'unit_price' => 80]);
+    $quote = Quote::query()->create(['user_id' => $user->id, 'company_id' => $company->id, 'client_id' => $client->id,
+        'number' => 'ORC-AUDIT', 'quote_date' => now(), 'status' => 'sent']);
+    $quote->items()->create(['item_type' => 'product', 'product_id' => $product->id, 'name' => $product->name, 'unit' => 'UN', 'quantity' => 2, 'unit_price' => 25]);
+    $quote->items()->create(['item_type' => 'service', 'service_id' => $service->id, 'name' => $service->name, 'unit' => 'UN', 'quantity' => 1, 'unit_price' => 80]);
+
+    // Mesma ação usada pelo botão "Gerar venda".
+    $sale = app(ConvertQuoteToSaleAction::class)->execute($quote);
+    expect($sale->saleItems)->toHaveCount(1)->and((float) $sale->total_amount)->toBe(50.0);
+
+    $preview = app(PreviewSaleDanfeAction::class)->execute($sale);
+    expect($preview->getStatusCode())->toBe(200)->and(substr($preview->getContent(), 0, 4))->toBe('%PDF');
     if (getenv('FOCUS_AUDIT_EMIT') !== '1') {
         return;
     }
-    $reference = 'audit'.bin2hex(random_bytes(12));
-    $resultPath = dirname($path).'/focus-audit-result.json';
-    file_put_contents($resultPath, json_encode(['reference' => $reference, 'environment' => 'homologacao']));
-    $api = app(FocusApiClient::class);
-    $response = $api->post($config, '/v2/nfe', $payload, ['ref' => $reference]);
-    file_put_contents($resultPath, json_encode([
-        'reference' => $reference, 'environment' => 'homologacao', 'http' => $response->status(),
-        'status' => $response->json('status'), 'code' => $response->json('codigo'),
-        'errors' => $response->json('erros'),
-    ]));
-    expect($response->status())->toBeIn([201, 202]);
-    for ($attempt = 0; $attempt < 5; $attempt++) {
-        $response = $api->get($config, '/v2/nfe/'.$reference);
-        $status = $response->json('status');
-        if (! in_array($status, ['processando', 'processando_autorizacao'])) {
-            break;
-        }
-        sleep(2);
+
+    // Mesma ação usada pelo botão "Emitir NF-e"; depois consulta até sair do processamento.
+    app(EmitSaleNfeAction::class)->execute($sale->fresh());
+    for ($attempt = 0; $attempt < 10 && ! in_array($sale->fresh()->focus_nfe_status, ['autorizado', 'erro_autorizacao', 'denegado', 'cancelado'], true); $attempt++) {
+        sleep(3);
+        app(ConsultSaleNfeAction::class)->execute($sale->fresh());
     }
-    file_put_contents($resultPath, json_encode([
-        'reference' => $reference, 'environment' => 'homologacao', 'http' => $response->status(),
-        'status' => $response->json('status'), 'sefaz_status' => $response->json('status_sefaz'),
-        'sefaz_message' => $response->json('mensagem_sefaz'),
-    ]));
-    expect($response->json('status'))->toBe('autorizado');
+    $sale = $sale->fresh();
+    $resultPath = dirname($path).'/focus-audit-result.json';
+    file_put_contents($resultPath, json_encode(['reference' => $sale->focus_nfe_ref, 'environment' => 'homologacao',
+        'status' => $sale->focus_nfe_status, 'error' => $sale->focus_nfe_error]));
+    expect($sale->focus_nfe_status)->toBe('autorizado');
+
+    $pdf = app(FocusApiClient::class)->download($config, $sale->focus_nfe_url);
+    expect(substr($pdf, 0, 4))->toBe('%PDF');
 })->group('live-focus');
 
 test('auditoria opt-in baixa DANFE da referência de homologação preservada', function () {
