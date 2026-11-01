@@ -1,0 +1,1 @@
+- Upload de logo (FileUpload no disco `public`) fica "Carregando" sem fim se faltar `php artisan storage:link` ou se `APP_URL` não for o endereço real do servidor (dev: `http://127.0.0.1:8000`).
