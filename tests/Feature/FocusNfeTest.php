@@ -75,9 +75,9 @@ test('emite uma NF-e e agenda o acompanhamento assíncrono', function (): void {
     expect($this->sale->focus_nfe_status)->toBe('processando')
         ->and($this->sale->focus_nfe_ref)->toMatch('/^sale\d+[a-z0-9]+$/')
         ->and($this->sale->focus_nfe_payload['items'][0]['codigo_ncm'])->toBe('61091000')
-        ->and($this->sale->focus_nfe_payload['informacoes_adicionais_contribuinte'])->toBe("Válvula:\nPRESSOR/450330");
+        ->and($this->sale->focus_nfe_payload['informacoes_adicionais_contribuinte'])->toBe('Válvula:; PRESSOR/450330');
     Http::assertSent(fn ($request): bool => str_contains($request->url(), '/v2/nfe?ref=')
-        && $request['informacoes_adicionais_contribuinte'] === "Válvula:\nPRESSOR/450330");
+        && $request['informacoes_adicionais_contribuinte'] === 'Válvula:; PRESSOR/450330');
 });
 
 test('consulta e cancela uma NF-e autorizada', function (): void {
@@ -372,4 +372,12 @@ test('inclui observações na pré-visualização e respeita o limite da NF-e', 
     $this->sale->update(['notes' => null]);
     expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh()))
         ->not->toHaveKey('informacoes_adicionais_contribuinte');
+});
+
+test('normaliza quebras de linha das observações antes de enviar à Focus', function (): void {
+    $this->sale->update(['notes' => "Válvula:\r\nReferência 450330\nReferência 450562\rFim"]);
+    $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh());
+    expect($payload['informacoes_adicionais_contribuinte'])
+        ->toBe('Válvula:; Referência 450330; Referência 450562; Fim');
+    expect($this->sale->fresh()->notes)->toBe("Válvula:\r\nReferência 450330\nReferência 450562\rFim");
 });

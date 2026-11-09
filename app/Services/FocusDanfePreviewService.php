@@ -45,7 +45,9 @@ class FocusDanfePreviewService
         }
         $this->municipioService->ensureClientIbgeCode($sale->client, $focusConfig);
 
-        if (mb_strlen((string) $sale->notes) > 5000) {
+        // A Focus transforma quebras de linha em texto literal no XML.
+        $notes = trim(preg_replace('/\R/u', '; ', (string) $sale->notes) ?? '');
+        if (mb_strlen($notes) > 5000) {
             throw new RuntimeException('As observações da venda devem ter no máximo 5.000 caracteres para emitir a NF-e ou gerar a pré-visualização.');
         }
 
@@ -59,7 +61,7 @@ class FocusDanfePreviewService
             ->all();
 
         return array_filter([
-            'informacoes_adicionais_contribuinte' => $sale->notes,
+            'informacoes_adicionais_contribuinte' => $notes,
             'natureza_operacao' => (string) ($focusConfig['nfe']['natureza_operacao'] ?? 'VENDA DE MERCADORIA'),
             // A SEFAZ valida a data de emissão contra o horário do envio; usar a data da venda
             // causaria rejeição para vendas de outros dias.
