@@ -66,6 +66,7 @@ beforeEach(function (): void {
 
 test('emite uma NF-e e agenda o acompanhamento assíncrono', function (): void {
     Http::fake(['https://homologacao.focusnfe.com.br/v2/nfe*' => Http::response(['status' => 'processando'], 202)]);
+    $this->sale->update(['notes' => "Válvula:\nPRESSOR/450330"]);
 
     $response = app(EmitSaleNfeAction::class)->execute($this->sale);
 
@@ -73,8 +74,10 @@ test('emite uma NF-e e agenda o acompanhamento assíncrono', function (): void {
     $this->sale->refresh();
     expect($this->sale->focus_nfe_status)->toBe('processando')
         ->and($this->sale->focus_nfe_ref)->toMatch('/^sale\d+[a-z0-9]+$/')
-        ->and($this->sale->focus_nfe_payload['items'][0]['codigo_ncm'])->toBe('61091000');
-    Http::assertSent(fn ($request): bool => str_contains($request->url(), '/v2/nfe?ref='));
+        ->and($this->sale->focus_nfe_payload['items'][0]['codigo_ncm'])->toBe('61091000')
+        ->and($this->sale->focus_nfe_payload['informacoes_adicionais_contribuinte'])->toBe("Válvula:\nPRESSOR/450330");
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), '/v2/nfe?ref=')
+        && $request['informacoes_adicionais_contribuinte'] === "Válvula:\nPRESSOR/450330");
 });
 
 test('consulta e cancela uma NF-e autorizada', function (): void {
@@ -355,4 +358,18 @@ test('mostra mensagem quando a Focus está fora do ar ao baixar o XML', function
     Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'));
 
     $this->actingAs($this->user)->get(route('sales.danfe-local', $this->sale))->assertRedirect();
+});
+
+test('inclui observações na pré-visualização e respeita o limite da NF-e', function (): void {
+    $this->sale->update(['notes' => str_repeat('á', 5000)]);
+    $payload = app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh());
+    expect($payload['informacoes_adicionais_contribuinte'])->toBe(str_repeat('á', 5000));
+
+    $this->sale->update(['notes' => str_repeat('á', 5001)]);
+    expect(fn () => app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh()))
+        ->toThrow(RuntimeException::class, 'no máximo 5.000 caracteres');
+
+    $this->sale->update(['notes' => null]);
+    expect(app(FocusDanfePreviewService::class)->buildPayload($this->sale->fresh()))
+        ->not->toHaveKey('informacoes_adicionais_contribuinte');
 });

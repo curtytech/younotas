@@ -97,3 +97,5 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
 "# younotas" 
+
+As observações da venda são enviadas nas novas emissões de NF-e (até 5.000 caracteres) e aparecem nas informações complementares da DANFE, inclusive na opção com logo. Notas já autorizadas mantêm o conteúdo do XML original.
